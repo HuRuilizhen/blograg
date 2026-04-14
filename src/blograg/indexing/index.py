@@ -56,7 +56,7 @@ class BlogRAGIndex:
     def retrieve_paragraphs(self, query: str, top_k: int | None = None) -> list[ParagraphResult]:
         """Retrieve structured paragraph-first results for one query."""
 
-        requested_top_k = top_k or self.config.retrieval_default_top_k
+        requested_top_k = self.config.retrieval_default_top_k if top_k is None else top_k
         if requested_top_k <= 0:
             raise ValueError("top_k must be greater than zero.")
 
