@@ -45,7 +45,7 @@ Build a fresh local index:
 blograg build --blog-dir /path/to/blog --index-dir /path/to/index
 ```
 
-Serve an existing index over MCP stdio:
+Serve an existing index over MCP Streamable HTTP:
 
 ```bash
 blograg serve --index-dir /path/to/index
@@ -56,7 +56,7 @@ run `build` first.
 
 ## MCP Client Setup
 
-`blograg` already exposes a stdio MCP server through:
+`blograg` exposes an MCP server over Streamable HTTP through:
 
 ```bash
 blograg serve --index-dir /path/to/index
@@ -65,13 +65,52 @@ blograg serve --index-dir /path/to/index
 For project-local client registration, this repository also includes:
 
 - `scripts/serve_mcp.sh`
-  - starts the MCP server from this repository's `.venv`
+  - starts the HTTP MCP server in the foreground from this repository's `.venv`
   - reads the index path from `BLOGRAG_INDEX_DIR`
   - automatically loads `.env.local` from the repository root when present
   - defaults to `index/` in the repository root
+- `scripts/restart_mcp_http.sh`
+  - restarts the local HTTP MCP server in the background
+  - writes a PID file at `/tmp/blograg-mcp-http.pid`
+  - writes logs to `/tmp/blograg-mcp-http.log`
+- `scripts/stop_mcp_http.sh`
+  - stops the background HTTP MCP server started through the PID file
 - `scripts/setup_mcp.sh`
   - optionally builds the index
-  - registers the server for `codex`, `openclaw`, or both
+  - restarts the local HTTP MCP server
+  - registers the server URL for `codex`, `openclaw`, or both
+
+## Service Lifecycle
+
+Use the wrapper scripts when you want a project-local HTTP MCP service:
+
+Start in the foreground for local debugging:
+
+```bash
+bash scripts/serve_mcp.sh
+```
+
+Restart in the background:
+
+```bash
+bash scripts/restart_mcp_http.sh
+```
+
+Stop the background server:
+
+```bash
+bash scripts/stop_mcp_http.sh
+```
+
+Register the MCP endpoint for Codex and OpenClaw:
+
+```bash
+bash scripts/setup_mcp.sh --client both
+```
+
+`setup_mcp.sh` is a convenience entry point for registration. It is not a
+process manager. If you need to restart or stop the local HTTP service later,
+use `restart_mcp_http.sh` and `stop_mcp_http.sh` directly.
 
 One-command registration examples:
 
@@ -99,10 +138,9 @@ scripts/setup_mcp.sh \
   --rebuild
 ```
 
-The generated registrations use a stable wrapper command instead of embedding a
-long shell snippet in the client config. That makes the MCP entry easier to
-reuse across Codex and OpenClaw and keeps the project-local `.venv` and index
-path wiring in one place.
+The generated registrations point clients at a local Streamable HTTP endpoint
+instead of a stdio subprocess. That avoids stdio transport breakage from noisy
+third-party model-loading logs and keeps Codex/OpenClaw on the same stable URL.
 
 ## Local Env File
 

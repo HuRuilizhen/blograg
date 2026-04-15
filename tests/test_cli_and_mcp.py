@@ -186,7 +186,7 @@ def test_serve_command_loads_index_and_runs_stdio_server(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     loaded_with: dict[str, Path] = {}
-    run_arguments: dict[str, str] = {}
+    run_arguments: dict[str, object] = {}
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
@@ -207,8 +207,10 @@ def test_serve_command_loads_index_and_runs_stdio_server(
         loaded_with["index_dir"] = index_dir
         return fake_index
 
-    def fake_create_mcp_server(index: object) -> _FakeServer:
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
         assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
         return _FakeServer()
 
     monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
@@ -226,13 +228,15 @@ def test_serve_command_loads_index_and_runs_stdio_server(
 
     assert result.exit_code == 0
     assert loaded_with["index_dir"] == tmp_path / "index"
-    assert run_arguments["transport"] == "stdio"
+    assert run_arguments["transport"] == "streamable-http"
+    assert run_arguments["host"] == "127.0.0.1"
+    assert run_arguments["port"] == 8765
 
 
 def test_serve_command_applies_labelgen_cache_dir_from_environment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    run_arguments: dict[str, str] = {}
+    run_arguments: dict[str, object] = {}
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
@@ -252,8 +256,10 @@ def test_serve_command_applies_labelgen_cache_dir_from_environment(
     def fake_load_index(*, index_dir: Path) -> object:
         return fake_index
 
-    def fake_create_mcp_server(index: object) -> _FakeServer:
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
         assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
         return _FakeServer()
 
     monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache")
@@ -272,13 +278,13 @@ def test_serve_command_applies_labelgen_cache_dir_from_environment(
 
     assert result.exit_code == 0
     assert fake_index.pipeline.config.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache"
-    assert run_arguments["transport"] == "stdio"
+    assert run_arguments["transport"] == "streamable-http"
 
 
 def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    run_arguments: dict[str, str] = {}
+    run_arguments: dict[str, object] = {}
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
@@ -298,8 +304,10 @@ def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
     def fake_load_index(*, index_dir: Path) -> object:
         return fake_index
 
-    def fake_create_mcp_server(index: object) -> _FakeServer:
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
         assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
         return _FakeServer()
 
     monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache-env")
@@ -320,7 +328,61 @@ def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
 
     assert result.exit_code == 0
     assert fake_index.pipeline.config.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache-env"
-    assert run_arguments["transport"] == "stdio"
+    assert run_arguments["transport"] == "streamable-http"
+
+
+def test_serve_command_can_select_http_binding(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_arguments: dict[str, object] = {}
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                labelgen=SimpleNamespace(
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
+                    )
+                )
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            run_arguments["transport"] = transport
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        return fake_index
+
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
+        assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
+        return _FakeServer()
+
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    (tmp_path / "index").mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "serve",
+            "--index-dir",
+            str(tmp_path / "index"),
+            "--transport",
+            "streamable-http",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8877",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert run_arguments["transport"] == "streamable-http"
+    assert run_arguments["host"] == "127.0.0.1"
+    assert run_arguments["port"] == 8877
 
 
 def _write_blog(tmp_path: Path, files: dict[str, str]) -> Path:

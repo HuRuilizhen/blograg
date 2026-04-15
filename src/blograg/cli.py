@@ -42,6 +42,20 @@ _LABELGEN_CACHE_DIR_OPTION = typer.Option(
         "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > upstream default."
     ),
 )
+_TRANSPORT_OPTION = typer.Option(
+    "streamable-http",
+    help="MCP transport to use: streamable-http or stdio.",
+)
+_HOST_OPTION = typer.Option(
+    "127.0.0.1",
+    help="Host to bind for HTTP MCP transport.",
+)
+_PORT_OPTION = typer.Option(
+    8765,
+    min=1,
+    max=65535,
+    help="Port to bind for HTTP MCP transport.",
+)
 _LLM_BATCH_SIZE_OPTION = typer.Option(
     8,
     min=1,
@@ -98,12 +112,15 @@ def build(
 def serve(
     index_dir: Path = _INDEX_DIR_SERVE_OPTION,
     labelgen_cache_dir: str | None = _LABELGEN_CACHE_DIR_OPTION,
+    transport: Literal["streamable-http", "stdio"] = _TRANSPORT_OPTION,
+    host: str = _HOST_OPTION,
+    port: int = _PORT_OPTION,
 ) -> None:
-    """Load an existing local index and start the MCP server over stdio."""
+    """Load an existing local index and start the MCP server."""
 
     index = load_index(index_dir=index_dir)
     cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
     if cache_dir is not None:
         index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
-    server = create_mcp_server(index)
-    server.run(transport="stdio")
+    server = create_mcp_server(index, host=host, port=port)
+    server.run(transport=transport)

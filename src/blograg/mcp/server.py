@@ -9,7 +9,12 @@ from mcp.server.fastmcp import FastMCP
 from blograg.indexing import BlogRAGIndex
 
 
-def create_mcp_server(index: BlogRAGIndex) -> FastMCP:
+def create_mcp_server(
+    index: BlogRAGIndex,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> FastMCP:
     """Create a minimal MCP server for one loaded blograg index."""
 
     server = FastMCP(
@@ -17,6 +22,8 @@ def create_mcp_server(index: BlogRAGIndex) -> FastMCP:
         instructions=(
             "Retrieve heading-delimited paragraphs from one local Jekyll-style blog index."
         ),
+        host=host,
+        port=port,
     )
 
     @server.tool(
