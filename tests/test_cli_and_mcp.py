@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import anyio
@@ -129,6 +130,8 @@ def test_build_command_can_select_llm_extraction(
             "https://api.mistral.ai/v1/chat/completions",
             "--llm-api-key-env-var",
             "MISTRAL_API_KEY",
+            "--labelgen-cache-dir",
+            "/tmp/blograg-cache-cli",
         ],
     )
 
@@ -141,6 +144,7 @@ def test_build_command_can_select_llm_extraction(
     assert llm_config.model == "mistral-small"
     assert llm_config.base_url == "https://api.mistral.ai/v1/chat/completions"
     assert llm_config.api_key_env_var == "MISTRAL_API_KEY"
+    assert llm_config.cache_dir == "/tmp/blograg-cache-cli"
 
 
 def test_build_command_can_select_spacy_extraction(
@@ -183,7 +187,17 @@ def test_serve_command_loads_index_and_runs_stdio_server(
 ) -> None:
     loaded_with: dict[str, Path] = {}
     run_arguments: dict[str, str] = {}
-    fake_index = object()
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                labelgen=SimpleNamespace(
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
+                    )
+                )
+            )
+        )
+    )
 
     class _FakeServer:
         def run(self, *, transport: str) -> None:
@@ -212,6 +226,100 @@ def test_serve_command_loads_index_and_runs_stdio_server(
 
     assert result.exit_code == 0
     assert loaded_with["index_dir"] == tmp_path / "index"
+    assert run_arguments["transport"] == "stdio"
+
+
+def test_serve_command_applies_labelgen_cache_dir_from_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_arguments: dict[str, str] = {}
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                labelgen=SimpleNamespace(
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
+                    )
+                )
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            run_arguments["transport"] = transport
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        return fake_index
+
+    def fake_create_mcp_server(index: object) -> _FakeServer:
+        assert index is fake_index
+        return _FakeServer()
+
+    monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache")
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    (tmp_path / "index").mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "serve",
+            "--index-dir",
+            str(tmp_path / "index"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_index.pipeline.config.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache"
+    assert run_arguments["transport"] == "stdio"
+
+
+def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_arguments: dict[str, str] = {}
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                labelgen=SimpleNamespace(
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
+                    )
+                )
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            run_arguments["transport"] = transport
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        return fake_index
+
+    def fake_create_mcp_server(index: object) -> _FakeServer:
+        assert index is fake_index
+        return _FakeServer()
+
+    monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache-env")
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    (tmp_path / "index").mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "serve",
+            "--index-dir",
+            str(tmp_path / "index"),
+            "--labelgen-cache-dir",
+            "/tmp/blograg-cache-cli",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_index.pipeline.config.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache-env"
     assert run_arguments["transport"] == "stdio"
 
 

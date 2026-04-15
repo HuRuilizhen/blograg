@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -11,6 +12,7 @@ from labelrag import RAGPipelineConfig, RetrievalConfig
 ConceptExtractorMode = Literal["spacy", "heuristic", "llm"]
 LLMProvider = Literal["openai", "mistral", "qwen", "ollama"]
 PersistenceFormat = Literal["json", "json.gz"]
+LABELGEN_CACHE_DIR_ENV_VAR = "LABELGEN_CACHE_DIR"
 
 
 @dataclass(slots=True)
@@ -44,6 +46,7 @@ def build_config(
     llm_model: str | None = None,
     llm_base_url: str | None = None,
     llm_api_key_env_var: str | None = None,
+    labelgen_cache_dir: str | None = None,
     llm_batch_size: int = 8,
     llm_max_concepts_per_paragraph: int = 12,
     llm_output_contract_mode: Literal["auto", "json_schema", "json_object", "prompt_only"] = "auto",
@@ -61,7 +64,19 @@ def build_config(
         llm_config.model = llm_model or ""
         llm_config.api_key_env_var = llm_api_key_env_var
         llm_config.base_url = llm_base_url
+        resolved_cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
+        if resolved_cache_dir is not None:
+            llm_config.cache_dir = resolved_cache_dir
         llm_config.batch_size = llm_batch_size
         llm_config.max_concepts_per_paragraph = llm_max_concepts_per_paragraph
         llm_config.output_contract_mode = llm_output_contract_mode
     return config
+
+
+def resolve_labelgen_cache_dir(cli_value: str | None = None) -> str | None:
+    """Resolve the labelgen cache directory with env > cli > upstream default precedence."""
+
+    env_value = os.environ.get(LABELGEN_CACHE_DIR_ENV_VAR)
+    if env_value:
+        return env_value
+    return cli_value

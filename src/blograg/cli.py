@@ -7,7 +7,7 @@ from typing import Literal
 
 import typer
 
-from blograg.config import build_config
+from blograg.config import build_config, resolve_labelgen_cache_dir
 from blograg.indexing import build_index, load_index
 from blograg.mcp import create_mcp_server
 
@@ -35,6 +35,13 @@ _LLM_API_KEY_ENV_VAR_OPTION = typer.Option(
     None,
     help="Optional API key environment variable override for LLM concept extraction.",
 )
+_LABELGEN_CACHE_DIR_OPTION = typer.Option(
+    None,
+    help=(
+        "Optional cache directory override for provider-backed LLM concept extraction. "
+        "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > upstream default."
+    ),
+)
 _LLM_BATCH_SIZE_OPTION = typer.Option(
     8,
     min=1,
@@ -60,6 +67,7 @@ def build(
     llm_model: str | None = _LLM_MODEL_OPTION,
     llm_base_url: str | None = _LLM_BASE_URL_OPTION,
     llm_api_key_env_var: str | None = _LLM_API_KEY_ENV_VAR_OPTION,
+    labelgen_cache_dir: str | None = _LABELGEN_CACHE_DIR_OPTION,
     llm_batch_size: int = _LLM_BATCH_SIZE_OPTION,
     llm_max_concepts_per_paragraph: int = _LLM_MAX_CONCEPTS_OPTION,
     llm_output_contract_mode: Literal[
@@ -74,6 +82,7 @@ def build(
         llm_model=llm_model,
         llm_base_url=llm_base_url,
         llm_api_key_env_var=llm_api_key_env_var,
+        labelgen_cache_dir=labelgen_cache_dir,
         llm_batch_size=llm_batch_size,
         llm_max_concepts_per_paragraph=llm_max_concepts_per_paragraph,
         llm_output_contract_mode=llm_output_contract_mode,
@@ -88,9 +97,13 @@ def build(
 @app.command()
 def serve(
     index_dir: Path = _INDEX_DIR_SERVE_OPTION,
+    labelgen_cache_dir: str | None = _LABELGEN_CACHE_DIR_OPTION,
 ) -> None:
     """Load an existing local index and start the MCP server over stdio."""
 
     index = load_index(index_dir=index_dir)
+    cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
+    if cache_dir is not None:
+        index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
     server = create_mcp_server(index)
     server.run(transport="stdio")

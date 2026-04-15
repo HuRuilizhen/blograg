@@ -39,3 +39,55 @@ def test_build_config_can_enable_llm_extraction() -> None:
     assert llm_config.batch_size == 4
     assert llm_config.max_concepts_per_paragraph == 9
     assert llm_config.output_contract_mode == "json_object"
+
+
+def test_build_config_reads_labelgen_cache_dir_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache")
+
+    config = build_config(
+        concept_extractor="llm",
+        llm_provider="mistral",
+        llm_model="mistral-small",
+    )
+
+    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache"
+
+
+def test_build_config_prefers_environment_over_cli_for_labelgen_cache_dir(monkeypatch) -> None:
+    monkeypatch.setenv("LABELGEN_CACHE_DIR", "/tmp/blograg-cache-env")
+
+    config = build_config(
+        concept_extractor="llm",
+        llm_provider="mistral",
+        llm_model="mistral-small",
+        labelgen_cache_dir="/tmp/blograg-cache-cli",
+    )
+
+    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache-env"
+
+
+def test_build_config_uses_cli_labelgen_cache_dir_without_environment(monkeypatch) -> None:
+    monkeypatch.delenv("LABELGEN_CACHE_DIR", raising=False)
+
+    config = build_config(
+        concept_extractor="llm",
+        llm_provider="mistral",
+        llm_model="mistral-small",
+        labelgen_cache_dir="/tmp/blograg-cache-cli",
+    )
+
+    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == "/tmp/blograg-cache-cli"
+
+
+def test_build_config_uses_default_labelgen_cache_dir_without_environment_or_cli(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("LABELGEN_CACHE_DIR", raising=False)
+
+    config = build_config(
+        concept_extractor="llm",
+        llm_provider="mistral",
+        llm_model="mistral-small",
+    )
+
+    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == ".labelgen-cache"
