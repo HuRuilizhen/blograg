@@ -54,6 +54,79 @@ blograg serve --index-dir /path/to/index
 `serve` does not rebuild automatically. If the index is missing or incomplete,
 run `build` first.
 
+## MCP Client Setup
+
+`blograg` already exposes a stdio MCP server through:
+
+```bash
+blograg serve --index-dir /path/to/index
+```
+
+For project-local client registration, this repository also includes:
+
+- `scripts/serve_mcp.sh`
+  - starts the MCP server from this repository's `.venv`
+  - reads the index path from `BLOGRAG_INDEX_DIR`
+  - automatically loads `.env.local` from the repository root when present
+  - defaults to `index/` in the repository root
+- `scripts/setup_mcp.sh`
+  - optionally builds the index
+  - registers the server for `codex`, `openclaw`, or both
+
+One-command registration examples:
+
+```bash
+scripts/setup_mcp.sh --client codex --blog-dir /path/to/blog
+scripts/setup_mcp.sh --client openclaw --blog-dir /path/to/blog
+scripts/setup_mcp.sh --client both --blog-dir /path/to/blog
+```
+
+If you already have a built index, point registration at it directly:
+
+```bash
+scripts/setup_mcp.sh \
+  --client both \
+  --index-dir /path/to/index
+```
+
+If you want to rebuild before registration:
+
+```bash
+scripts/setup_mcp.sh \
+  --client codex \
+  --blog-dir /path/to/blog \
+  --index-dir /path/to/index \
+  --rebuild
+```
+
+The generated registrations use a stable wrapper command instead of embedding a
+long shell snippet in the client config. That makes the MCP entry easier to
+reuse across Codex and OpenClaw and keeps the project-local `.venv` and index
+path wiring in one place.
+
+## Local Env File
+
+If your index was built with `--concept-extractor llm`, upstream query analysis
+still needs the corresponding provider API key at serve time.
+
+The recommended project-local setup is a root `.env.local` file that is loaded
+by `scripts/serve_mcp.sh` before it starts `blograg serve`.
+
+Example `.env.local`:
+
+```bash
+MISTRAL_API_KEY=your-key-here
+```
+
+Then the one-command setup remains the same:
+
+```bash
+bash scripts/setup_mcp.sh --client both --index-dir /path/to/index
+```
+
+Because the wrapper script loads `.env.local`, neither Codex nor OpenClaw needs
+to store the API key directly in their MCP configuration.
+
 ## Concept Extraction Modes
 
 `blograg build` exposes the current upstream concept extraction modes:
