@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,14 @@ from blograg.cli import app
 from blograg.config import BlogRAGConfig
 from blograg.indexing import build_index
 from blograg.mcp import create_mcp_server
+from blograg.user_config import (
+    BuildDefaults,
+    CLIConfig,
+    ProviderSecrets,
+    ServeDefaults,
+    save_provider_secrets,
+)
+from blograg.user_config import save_cli_config as save_user_cli_config
 from tests.testsupport import FakeEmbeddingProvider
 
 runner = CliRunner()
@@ -182,6 +191,51 @@ def test_build_command_can_select_spacy_extraction(
     assert config.labelrag_pipeline.labelgen.use_nlp_extractor is True
 
 
+def test_build_command_uses_persisted_defaults_and_secret(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    @dataclass(slots=True)
+    class _FakeIndex:
+        paragraph_records: dict[str, object]
+
+    def fake_build_index(*, blog_dir: Path, index_dir: Path, config: object) -> _FakeIndex:
+        captured["blog_dir"] = blog_dir
+        captured["index_dir"] = index_dir
+        captured["config"] = config
+        captured["api_key"] = os.environ.get("MISTRAL_API_KEY")
+        return _FakeIndex(paragraph_records={"p1": object()})
+
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    monkeypatch.setattr(blograg.cli, "build_index", fake_build_index)
+    blog_dir = tmp_path / "blog"
+    blog_dir.mkdir()
+    save_user_cli_config(
+        CLIConfig(
+            default_blog_dir=str(blog_dir),
+            default_index_dir=str(tmp_path / "index"),
+            build=BuildDefaults(
+                concept_extractor="llm",
+                llm_provider="mistral",
+                llm_model="mistral-small",
+            ),
+        )
+    )
+    save_provider_secrets(ProviderSecrets(mistral="secret-value"))
+
+    result = runner.invoke(app, ["build"])
+
+    config = cast(BlogRAGConfig, captured["config"])
+    llm_config = config.labelrag_pipeline.labelgen.extraction.llm
+    assert result.exit_code == 0
+    assert captured["blog_dir"] == blog_dir
+    assert captured["index_dir"] == tmp_path / "index"
+    assert captured["api_key"] == "secret-value"
+    assert llm_config.provider == "mistral"
+    assert llm_config.model == "mistral-small"
+
+
 def test_serve_command_loads_index_and_runs_stdio_server(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -229,6 +283,68 @@ def test_serve_command_loads_index_and_runs_stdio_server(
     assert run_arguments["transport"] == "streamable-http"
     assert run_arguments["host"] == "127.0.0.1"
     assert run_arguments["port"] == 8765
+
+
+def test_serve_command_uses_persisted_defaults_and_secret(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    loaded_with: dict[str, Path] = {}
+    run_arguments: dict[str, object] = {}
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                labelgen=SimpleNamespace(
+                    resolved_extractor_mode=lambda: "llm",
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(
+                            cache_dir=".labelgen-cache",
+                            provider="mistral",
+                            api_key_env_var=None,
+                        )
+                    ),
+                )
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            run_arguments["transport"] = transport
+            run_arguments["api_key"] = os.environ.get("MISTRAL_API_KEY")
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        loaded_with["index_dir"] = index_dir
+        return fake_index
+
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
+        assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
+        return _FakeServer()
+
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    save_user_cli_config(
+        CLIConfig(
+            default_index_dir=str(tmp_path / "index"),
+            serve=ServeDefaults(
+                host="0.0.0.0",
+                port=8877,
+                transport="stdio",
+            ),
+        )
+    )
+    save_provider_secrets(ProviderSecrets(mistral="secret-value"))
+
+    result = runner.invoke(app, ["serve"])
+
+    assert result.exit_code == 0
+    assert loaded_with["index_dir"] == tmp_path / "index"
+    assert run_arguments["transport"] == "stdio"
+    assert run_arguments["host"] == "0.0.0.0"
+    assert run_arguments["port"] == 8877
+    assert run_arguments["api_key"] == "secret-value"
 
 
 def test_serve_command_applies_labelgen_cache_dir_from_environment(
@@ -375,6 +491,26 @@ def test_serve_command_can_select_http_binding(
     assert run_arguments["transport"] == "streamable-http"
     assert run_arguments["host"] == "127.0.0.1"
     assert run_arguments["port"] == 8877
+
+
+def test_config_commands_persist_values_and_mask_secrets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+
+    set_result = runner.invoke(app, ["config", "set", "default_index_dir", str(tmp_path / "index")])
+    secret_result = runner.invoke(
+        app,
+        ["config", "set-secret", "mistral", "--api-key", "secret-value"],
+    )
+    show_result = runner.invoke(app, ["config", "show"])
+
+    assert set_result.exit_code == 0
+    assert secret_result.exit_code == 0
+    assert show_result.exit_code == 0
+    assert f"default_index_dir = {tmp_path / 'index'}" in show_result.stdout
+    assert "mistral = configured" in show_result.stdout
+    assert "secret-value" not in show_result.stdout
 
 
 def _write_blog(tmp_path: Path, files: dict[str, str]) -> Path:
