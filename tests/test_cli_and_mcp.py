@@ -191,9 +191,7 @@ def test_serve_command_loads_index_and_runs_stdio_server(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
                 labelgen=SimpleNamespace(
-                    extraction=SimpleNamespace(
-                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
-                    )
+                    extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
                 )
             )
         )
@@ -241,9 +239,7 @@ def test_serve_command_applies_labelgen_cache_dir_from_environment(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
                 labelgen=SimpleNamespace(
-                    extraction=SimpleNamespace(
-                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
-                    )
+                    extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
                 )
             )
         )
@@ -289,9 +285,7 @@ def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
                 labelgen=SimpleNamespace(
-                    extraction=SimpleNamespace(
-                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
-                    )
+                    extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
                 )
             )
         )
@@ -339,9 +333,7 @@ def test_serve_command_can_select_http_binding(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
                 labelgen=SimpleNamespace(
-                    extraction=SimpleNamespace(
-                        llm=SimpleNamespace(cache_dir=".labelgen-cache")
-                    )
+                    extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
                 )
             )
         )
