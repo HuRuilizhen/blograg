@@ -595,6 +595,43 @@ def test_status_command_reports_managed_runtime_state(
     assert "http_status=405" in result.stdout
 
 
+def test_register_command_registers_both_clients(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    save_user_cli_config(CLIConfig(serve=ServeDefaults(host="0.0.0.0", port=8877)))
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_register_client(*, client: str, server_name: str, url: str) -> str:
+        calls.append((client, server_name, url))
+        return f"registered {client}"
+
+    monkeypatch.setattr(blograg.cli, "register_client", fake_register_client)
+
+    result = runner.invoke(app, ["register", "--client", "both", "--server-name", "blograg-local"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("codex", "blograg-local", "http://0.0.0.0:8877/mcp"),
+        ("openclaw", "blograg-local", "http://0.0.0.0:8877/mcp"),
+    ]
+    assert "registered codex" in result.stdout
+    assert "registered openclaw" in result.stdout
+
+
+def test_register_command_reports_registration_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_register_client(*, client: str, server_name: str, url: str) -> str:
+        del client, server_name, url
+        raise RuntimeError("codex executable not found")
+
+    monkeypatch.setattr(blograg.cli, "register_client", fake_register_client)
+
+    result = runner.invoke(app, ["register", "--client", "codex"])
+
+    assert result.exit_code == 1
+    assert "codex executable not found" in result.stderr
+
+
 def _write_blog(tmp_path: Path, files: dict[str, str]) -> Path:
     """Create a temporary blog directory with the provided file contents."""
 

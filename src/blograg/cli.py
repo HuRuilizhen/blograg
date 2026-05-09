@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import subprocess
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, cast
 
 import typer
 
+from blograg.client_registration import register_client
 from blograg.config import (
     ConceptExtractorMode,
     LLMProvider,
@@ -116,6 +118,10 @@ _FORCE_RESTART_OPTION = typer.Option(
     False,
     "--force-restart",
     help="Stop an existing managed server before starting a new one.",
+)
+_REGISTER_CLIENT_OPTION = typer.Option(
+    ...,
+    help="MCP client to register: codex, openclaw, or both.",
 )
 app.add_typer(config_app, name="config")
 
@@ -352,6 +358,35 @@ def status(
     if observed_status.http_status_code is not None:
         typer.echo(f"http_status={observed_status.http_status_code}")
     typer.echo(f"detail={observed_status.detail}")
+
+
+@app.command()
+def register(
+    client: Literal["codex", "openclaw", "both"] = _REGISTER_CLIENT_OPTION,
+    server_name: str = typer.Option("blograg", help="MCP server name to register."),
+    host: str | None = _HOST_OPTION,
+    port: int | None = _PORT_OPTION,
+    url: str | None = typer.Option(None, help="Optional MCP URL override."),
+) -> None:
+    """Register the MCP endpoint with Codex and/or OpenClaw."""
+
+    persisted_config = load_cli_config()
+    resolved_host = host or persisted_config.serve.host or "127.0.0.1"
+    resolved_port = port or persisted_config.serve.port or 8765
+    resolved_url = url or build_server_url(host=resolved_host, port=resolved_port)
+    clients = ["codex", "openclaw"] if client == "both" else [client]
+
+    try:
+        for current_client in clients:
+            message = register_client(
+                client=cast(Literal["codex", "openclaw"], current_client),
+                server_name=server_name,
+                url=resolved_url,
+            )
+            typer.echo(message)
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
 
 
 @config_app.command("path")
