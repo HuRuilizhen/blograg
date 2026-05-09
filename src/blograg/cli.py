@@ -16,6 +16,7 @@ from blograg.config import (
 )
 from blograg.indexing import build_index, load_index
 from blograg.mcp import create_mcp_server
+from blograg.service_manager import build_server_url, get_server_status, start_server, stop_server
 from blograg.user_config import (
     ProviderSecrets,
     apply_provider_secret,
@@ -79,6 +80,18 @@ _PORT_OPTION = typer.Option(
     max=65535,
     help="Port to bind for HTTP MCP transport.",
 )
+_PID_FILE_OPTION = typer.Option(
+    None,
+    file_okay=True,
+    dir_okay=False,
+    help="Optional PID file override for managed background service commands.",
+)
+_LOG_FILE_OPTION = typer.Option(
+    None,
+    file_okay=True,
+    dir_okay=False,
+    help="Optional log file override for managed background service commands.",
+)
 _LLM_BATCH_SIZE_OPTION = typer.Option(
     None,
     min=1,
@@ -98,6 +111,11 @@ _API_KEY_VALUE_OPTION = typer.Option(
     "--api-key",
     help="Provider API key. Omit to enter it interactively.",
     hide_input=True,
+)
+_FORCE_RESTART_OPTION = typer.Option(
+    False,
+    "--force-restart",
+    help="Stop an existing managed server before starting a new one.",
 )
 app.add_typer(config_app, name="config")
 
@@ -241,6 +259,99 @@ def serve(
         secrets=provider_secrets,
     ):
         server.run(transport=resolved_transport)
+
+
+@app.command()
+def start(
+    index_dir: Path | None = _INDEX_DIR_SERVE_OPTION,
+    transport: Literal["streamable-http", "stdio"] | None = _TRANSPORT_OPTION,
+    host: str | None = _HOST_OPTION,
+    port: int | None = _PORT_OPTION,
+    pid_file: Path | None = _PID_FILE_OPTION,
+    log_file: Path | None = _LOG_FILE_OPTION,
+    force_restart: bool = _FORCE_RESTART_OPTION,
+) -> None:
+    """Start the MCP server in the background and wait for readiness."""
+
+    persisted_config = load_cli_config()
+    config_paths = get_config_paths()
+    resolved_index_dir = _require_directory_path(
+        index_dir or _coerce_path(persisted_config.default_index_dir),
+        option_name="index-dir",
+        guidance="Provide `--index-dir` or configure `default_index_dir` first.",
+        must_exist=False,
+    )
+    resolved_transport = transport or persisted_config.serve.transport or "streamable-http"
+    resolved_host = host or persisted_config.serve.host or "127.0.0.1"
+    resolved_port = port or persisted_config.serve.port or 8765
+    resolved_pid_file = pid_file or config_paths.pid_path
+    resolved_log_file = log_file or config_paths.log_path
+
+    try:
+        status = start_server(
+            index_dir=resolved_index_dir,
+            host=resolved_host,
+            port=resolved_port,
+            transport=resolved_transport,
+            pid_file=resolved_pid_file,
+            log_file=resolved_log_file,
+            config_dir=config_paths.config_dir,
+            force_restart=force_restart,
+        )
+    except RuntimeError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
+
+    typer.echo(f"Started blograg server (PID {status.pid}).")
+    typer.echo(f"PID file: {status.pid_file}")
+    typer.echo(f"Log file: {status.log_file}")
+    typer.echo(f"URL: {status.url}")
+
+
+@app.command()
+def stop(
+    pid_file: Path | None = _PID_FILE_OPTION,
+) -> None:
+    """Stop the managed background MCP server."""
+
+    config_paths = get_config_paths()
+    resolved_pid_file = pid_file or config_paths.pid_path
+    message = stop_server(pid_file=resolved_pid_file)
+    typer.echo(message)
+
+
+@app.command()
+def status(
+    pid_file: Path | None = _PID_FILE_OPTION,
+    log_file: Path | None = _LOG_FILE_OPTION,
+    host: str | None = _HOST_OPTION,
+    port: int | None = _PORT_OPTION,
+    url: str | None = typer.Option(None, help="Optional MCP URL override."),
+) -> None:
+    """Report managed process state and MCP HTTP readiness."""
+
+    persisted_config = load_cli_config()
+    config_paths = get_config_paths()
+    resolved_pid_file = pid_file or config_paths.pid_path
+    resolved_log_file = log_file or config_paths.log_path
+    resolved_host = host or persisted_config.serve.host or "127.0.0.1"
+    resolved_port = port or persisted_config.serve.port or 8765
+    resolved_url = url or build_server_url(host=resolved_host, port=resolved_port)
+    observed_status = get_server_status(
+        pid_file=resolved_pid_file,
+        log_file=resolved_log_file,
+        url=resolved_url,
+    )
+
+    typer.echo(f"pid_file={observed_status.pid_file}")
+    typer.echo(f"log_file={observed_status.log_file}")
+    typer.echo(f"url={observed_status.url}")
+    typer.echo(f"pid={observed_status.pid if observed_status.pid is not None else 'missing'}")
+    typer.echo(f"process_running={'yes' if observed_status.process_running else 'no'}")
+    typer.echo(f"http_ready={'yes' if observed_status.http_ready else 'no'}")
+    if observed_status.http_status_code is not None:
+        typer.echo(f"http_status={observed_status.http_status_code}")
+    typer.echo(f"detail={observed_status.detail}")
 
 
 @config_app.command("path")

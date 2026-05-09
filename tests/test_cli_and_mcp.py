@@ -17,6 +17,7 @@ from blograg.cli import app
 from blograg.config import BlogRAGConfig
 from blograg.indexing import build_index
 from blograg.mcp import create_mcp_server
+from blograg.service_manager import ServerStatus
 from blograg.user_config import (
     BuildDefaults,
     CLIConfig,
@@ -511,6 +512,87 @@ def test_config_commands_persist_values_and_mask_secrets(
     assert f"default_index_dir = {tmp_path / 'index'}" in show_result.stdout
     assert "mistral = configured" in show_result.stdout
     assert "secret-value" not in show_result.stdout
+
+
+def test_start_command_uses_managed_runtime_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    save_user_cli_config(CLIConfig(default_index_dir=str(tmp_path / "index")))
+
+    def fake_start_server(**kwargs: object) -> ServerStatus:
+        captured.update(kwargs)
+        return ServerStatus(
+            pid_file=cast(Path, kwargs["pid_file"]),
+            log_file=cast(Path, kwargs["log_file"]),
+            url="http://127.0.0.1:8765/mcp",
+            pid=12345,
+            process_running=True,
+            http_ready=True,
+            http_status_code=405,
+            detail="HTTP 405",
+        )
+
+    monkeypatch.setattr(blograg.cli, "start_server", fake_start_server)
+
+    result = runner.invoke(app, ["start"])
+
+    assert result.exit_code == 0
+    assert captured["index_dir"] == tmp_path / "index"
+    assert captured["pid_file"] == tmp_path / "config-root" / "server.pid"
+    assert captured["log_file"] == tmp_path / "config-root" / "server.log"
+    assert "Started blograg server (PID 12345)." in result.stdout
+
+
+def test_stop_command_uses_managed_runtime_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+
+    def fake_stop_server(*, pid_file: Path) -> str:
+        captured["pid_file"] = pid_file
+        return "Stopped blograg server (PID 12345)."
+
+    monkeypatch.setattr(blograg.cli, "stop_server", fake_stop_server)
+
+    result = runner.invoke(app, ["stop"])
+
+    assert result.exit_code == 0
+    assert captured["pid_file"] == tmp_path / "config-root" / "server.pid"
+    assert "Stopped blograg server" in result.stdout
+
+
+def test_status_command_reports_managed_runtime_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    save_user_cli_config(CLIConfig(serve=ServeDefaults(host="0.0.0.0", port=8877)))
+
+    def fake_get_server_status(*, pid_file: Path, log_file: Path, url: str) -> ServerStatus:
+        assert pid_file == tmp_path / "config-root" / "server.pid"
+        assert log_file == tmp_path / "config-root" / "server.log"
+        assert url == "http://0.0.0.0:8877/mcp"
+        return ServerStatus(
+            pid_file=pid_file,
+            log_file=log_file,
+            url=url,
+            pid=12345,
+            process_running=True,
+            http_ready=True,
+            http_status_code=405,
+            detail="HTTP 405",
+        )
+
+    monkeypatch.setattr(blograg.cli, "get_server_status", fake_get_server_status)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    assert "process_running=yes" in result.stdout
+    assert "http_ready=yes" in result.stdout
+    assert "http_status=405" in result.stdout
 
 
 def _write_blog(tmp_path: Path, files: dict[str, str]) -> Path:

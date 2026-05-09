@@ -83,6 +83,8 @@ class ConfigPaths:
     config_dir: Path
     config_path: Path
     secrets_path: Path
+    pid_path: Path
+    log_path: Path
 
 
 def get_config_paths() -> ConfigPaths:
@@ -102,6 +104,8 @@ def get_config_paths() -> ConfigPaths:
         config_dir=config_dir,
         config_path=config_dir / "config.toml",
         secrets_path=config_dir / "secrets.toml",
+        pid_path=config_dir / "server.pid",
+        log_path=config_dir / "server.log",
     )
 
 
