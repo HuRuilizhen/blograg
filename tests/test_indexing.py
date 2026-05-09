@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from blograg.config import BlogRAGConfig, build_config
-from blograg.indexing import BlogRAGIndex, build_index, load_index
+from blograg.indexing import BlogRAGIndex, BuildProgressUpdate, build_index, load_index
 from blograg.models import ParagraphRecord
 from blograg.version import __version__
 from tests.testsupport import FakeEmbeddingProvider
@@ -297,6 +297,41 @@ def test_build_index_rejects_empty_blog(tmp_path: Path) -> None:
             index_dir=tmp_path / "index",
             embedding_provider=FakeEmbeddingProvider(),
         )
+
+
+def test_build_index_emits_progress_updates(tmp_path: Path) -> None:
+    blog_dir = _write_blog(
+        tmp_path,
+        {
+            "_posts/2026-04-14-my-post.md": (
+                "---\ntitle: My Post\n---\n\nIntro paragraph.\n\n## Section\nBody paragraph.\n"
+            )
+        },
+    )
+    progress_events: list[BuildProgressUpdate] = []
+
+    build_index(
+        blog_dir=blog_dir,
+        index_dir=tmp_path / "index",
+        config=BlogRAGConfig(),
+        embedding_provider=FakeEmbeddingProvider(),
+        progress_callback=progress_events.append,
+    )
+
+    assert progress_events[0].stage == "extract"
+    assert progress_events[0].processed == 0
+    assert progress_events[0].total == 2
+    assert progress_events[0].current_paragraph_id == "my-post::p001"
+    assert progress_events[1].stage == "extract"
+    assert progress_events[1].processed == 1
+    assert progress_events[1].current_paragraph_id == "my-post::p002"
+    assert progress_events[2].stage == "extract"
+    assert progress_events[2].processed == 2
+    assert progress_events[2].current_paragraph_id is None
+    assert progress_events[3].stage == "embed"
+    assert progress_events[3].processed == 2
+    assert progress_events[4].stage == "save"
+    assert progress_events[4].processed == 2
 
 
 def _write_blog(tmp_path: Path, files: dict[str, str]) -> Path:

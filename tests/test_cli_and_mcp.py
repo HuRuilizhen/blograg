@@ -78,7 +78,14 @@ def test_build_command_reports_written_index(
 
     built_with: dict[str, object] = {}
 
-    def fake_build_index(*, blog_dir: Path, index_dir: Path, config: object) -> _FakeIndex:
+    def fake_build_index(
+        *,
+        blog_dir: Path,
+        index_dir: Path,
+        config: object,
+        progress_callback: object | None = None,
+    ) -> _FakeIndex:
+        del progress_callback
         built_with["blog_dir"] = blog_dir
         built_with["index_dir"] = index_dir
         built_with["config"] = config
@@ -113,7 +120,14 @@ def test_build_command_can_select_llm_extraction(
     class _FakeIndex:
         paragraph_records: dict[str, object]
 
-    def fake_build_index(*, blog_dir: Path, index_dir: Path, config: object) -> _FakeIndex:
+    def fake_build_index(
+        *,
+        blog_dir: Path,
+        index_dir: Path,
+        config: object,
+        progress_callback: object | None = None,
+    ) -> _FakeIndex:
+        del progress_callback
         captured["blog_dir"] = blog_dir
         captured["index_dir"] = index_dir
         captured["config"] = config
@@ -166,7 +180,14 @@ def test_build_command_can_select_spacy_extraction(
     class _FakeIndex:
         paragraph_records: dict[str, object]
 
-    def fake_build_index(*, blog_dir: Path, index_dir: Path, config: object) -> _FakeIndex:
+    def fake_build_index(
+        *,
+        blog_dir: Path,
+        index_dir: Path,
+        config: object,
+        progress_callback: object | None = None,
+    ) -> _FakeIndex:
+        del blog_dir, index_dir, progress_callback
         captured["config"] = config
         return _FakeIndex(paragraph_records={"p1": object()})
 
@@ -201,7 +222,14 @@ def test_build_command_uses_persisted_defaults_and_secret(
     class _FakeIndex:
         paragraph_records: dict[str, object]
 
-    def fake_build_index(*, blog_dir: Path, index_dir: Path, config: object) -> _FakeIndex:
+    def fake_build_index(
+        *,
+        blog_dir: Path,
+        index_dir: Path,
+        config: object,
+        progress_callback: object | None = None,
+    ) -> _FakeIndex:
+        del progress_callback
         captured["blog_dir"] = blog_dir
         captured["index_dir"] = index_dir
         captured["config"] = config

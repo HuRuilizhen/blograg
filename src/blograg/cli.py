@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, cast
@@ -16,7 +17,7 @@ from blograg.config import (
     build_config,
     resolve_labelgen_cache_dir,
 )
-from blograg.indexing import build_index, load_index
+from blograg.indexing import BuildProgressUpdate, build_index, load_index
 from blograg.mcp import create_mcp_server
 from blograg.service_manager import build_server_url, get_server_status, start_server, stop_server
 from blograg.user_config import (
@@ -212,7 +213,16 @@ def build(
         api_key_env_var=resolved_llm_api_key_env_var,
         secrets=provider_secrets,
     ):
-        index = build_index(blog_dir=resolved_blog_dir, index_dir=resolved_index_dir, config=config)
+        progress_display = _BuildProgressDisplay()
+        try:
+            index = build_index(
+                blog_dir=resolved_blog_dir,
+                index_dir=resolved_index_dir,
+                config=config,
+                progress_callback=progress_display.update,
+            )
+        finally:
+            progress_display.finish()
         typer.echo(
             f"Built blograg index with {len(index.paragraph_records)} paragraphs at "
             f"{(resolved_index_dir / 'blograg').resolve()}"
@@ -671,3 +681,32 @@ def _blank_to_none(value: str) -> str | None:
     if not stripped:
         return None
     return stripped
+
+
+class _BuildProgressDisplay:
+    """Minimal terminal progress display for local index builds."""
+
+    def __init__(self) -> None:
+        self._active = False
+
+    def update(self, event: BuildProgressUpdate) -> None:
+        if not sys.stderr.isatty():
+            return
+        stage_label = {
+            "extract": "Extracting paragraphs",
+            "embed": "Embedding paragraphs",
+            "save": "Saving index",
+        }[event.stage]
+        current = ""
+        if event.current_paragraph_id is not None:
+            current = f" | current={event.current_paragraph_id}"
+            if event.current_paragraph_text_preview:
+                current += f" | {event.current_paragraph_text_preview}"
+        line = f"\r{stage_label}: {event.processed}/{event.total}{current}"
+        print(line, end="", file=sys.stderr, flush=True)
+        self._active = True
+
+    def finish(self) -> None:
+        if self._active and sys.stderr.isatty():
+            print(file=sys.stderr, flush=True)
+        self._active = False

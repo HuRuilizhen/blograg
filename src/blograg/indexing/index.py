@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from labelrag import EmbeddingProvider, Paragraph, RAGPipeline
 
@@ -21,6 +24,7 @@ _LABELRAG_DIRNAME = "labelrag"
 _MANIFEST_FILENAME = "manifest.json"
 _PARAGRAPHS_FILENAME = "paragraphs.json"
 _SCHEMA_VERSION = 1
+_HEURISTIC_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
 
 
 @dataclass(slots=True, frozen=True)
@@ -44,6 +48,20 @@ class _BlogRAGManifest:
     labelrag_persistence_format: PersistenceFormat
     paragraphs_artifact: str
     labelrag_snapshot_dir: str
+
+
+@dataclass(slots=True, frozen=True)
+class BuildProgressUpdate:
+    """Structured progress event emitted during local index builds."""
+
+    stage: Literal["extract", "embed", "save"]
+    processed: int
+    total: int
+    current_paragraph_id: str | None = None
+    current_paragraph_text_preview: str | None = None
+
+
+BuildProgressCallback = Callable[[BuildProgressUpdate], None]
 
 
 @dataclass(slots=True)
@@ -92,6 +110,7 @@ def build_index(
     index_dir: Path,
     config: BlogRAGConfig | None = None,
     embedding_provider: EmbeddingProvider | None = None,
+    progress_callback: BuildProgressCallback | None = None,
 ) -> BlogRAGIndex:
     """Build a fresh blograg index from a local blog directory."""
 
@@ -108,11 +127,35 @@ def build_index(
         config=effective_config.labelrag_pipeline,
         embedding_provider=embedding_provider,
     )
-    pipeline.fit([_paragraph_record_to_labelrag_paragraph(record) for record in paragraph_records])
+    labelrag_paragraphs = [
+        _paragraph_record_to_labelrag_paragraph(record) for record in paragraph_records
+    ]
+    with _install_build_progress_hooks(
+        paragraph_records={record.paragraph_id: record for record in paragraph_records},
+        total=len(labelrag_paragraphs),
+        progress_callback=progress_callback,
+    ):
+        pipeline.fit(labelrag_paragraphs)
+    if progress_callback is not None:
+        progress_callback(
+            BuildProgressUpdate(
+                stage="embed",
+                processed=len(labelrag_paragraphs),
+                total=len(labelrag_paragraphs),
+            )
+        )
     pipeline.save(
         layout.labelrag_dir,
         format=effective_config.labelrag_persistence_format,
     )
+    if progress_callback is not None:
+        progress_callback(
+            BuildProgressUpdate(
+                stage="save",
+                processed=len(labelrag_paragraphs),
+                total=len(labelrag_paragraphs),
+            )
+        )
 
     manifest = _BlogRAGManifest(
         blograg_version=__version__,
@@ -192,6 +235,119 @@ def _reset_blograg_directory(blograg_dir: Path) -> None:
     blograg_dir.mkdir(parents=True, exist_ok=True)
 
 
+@contextmanager
+def _install_build_progress_hooks(
+    *,
+    paragraph_records: dict[str, ParagraphRecord],
+    total: int,
+    progress_callback: BuildProgressCallback | None,
+) -> Generator[None, None, None]:
+    """Patch upstream extractors locally to emit build progress."""
+
+    if progress_callback is None:
+        yield
+        return
+
+    from labelgen.extraction.heuristic_extractor import HeuristicConceptExtractor
+    from labelgen.extraction.llm_extractor import LLMConceptExtractor
+    from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
+
+    def report(processed: int, paragraph: Paragraph | None) -> None:
+        record = paragraph_records.get(paragraph.id) if paragraph is not None else None
+        progress_callback(
+            BuildProgressUpdate(
+                stage="extract",
+                processed=processed,
+                total=total,
+                current_paragraph_id=record.paragraph_id if record is not None else None,
+                current_paragraph_text_preview=(
+                    _paragraph_preview(record.text)
+                    if record is not None
+                    else _paragraph_preview(paragraph.text)
+                    if paragraph is not None
+                    else None
+                ),
+            )
+        )
+
+    original_heuristic_extract = cast(Any, HeuristicConceptExtractor.extract)
+    original_spacy_extract_with_spacy = cast(
+        Any,
+        SpacyConceptExtractor._extract_with_spacy,  # pyright: ignore[reportPrivateUsage]
+    )
+    original_llm_extract = cast(Any, LLMConceptExtractor.extract)
+
+    def heuristic_extract_with_progress(
+        self: Any,
+        paragraphs: list[Paragraph],
+    ) -> list[Any]:
+        mentions: list[Any] = []
+        for index, paragraph in enumerate(paragraphs):
+            report(index, paragraph)
+            token_matches = _HEURISTIC_TOKEN_RE.finditer(paragraph.text)
+            tokens = [self._token_from_match(match) for match in token_matches]
+            mentions.extend(self._extract_rule_mentions(paragraph.id, tokens))
+        report(len(paragraphs), None)
+        return mentions
+
+    def spacy_extract_with_progress(
+        self: Any,
+        paragraphs: list[Paragraph],
+    ) -> list[Any]:
+        mentions: list[Any] = []
+        if self._nlp is None:
+            self._nlp = self._load_spacy_pipeline()
+        pipe = getattr(self._nlp, "pipe", None)
+        if not callable(pipe):
+            raise RuntimeError("The configured spaCy pipeline does not expose a callable pipe().")
+
+        docs = cast(Iterable[object], pipe(paragraph.text for paragraph in paragraphs))
+        for index, (paragraph, doc) in enumerate(zip(paragraphs, docs, strict=True)):
+            report(index, paragraph)
+            mentions.extend(self._extract_doc_mentions(paragraph.id, doc))
+        report(len(paragraphs), None)
+        return mentions
+
+    def llm_extract_with_progress(
+        self: Any,
+        paragraphs: list[Paragraph],
+    ) -> list[Any]:
+        self._validate_config(self._config.llm)
+        mentions: list[Any] = []
+        processed = 0
+        batches = self._iter_batches(paragraphs, self._config.llm.batch_size)
+        for batch_index, batch in enumerate(batches):
+            report(processed, batch[0] if batch else None)
+            payload = self._extract_batch_concepts(batch, batch_index=batch_index)
+            batch_mentions: list[Any] = []
+            for paragraph, concepts in zip(batch, payload.concept_lists, strict=True):
+                batch_mentions.extend(self._build_mentions(paragraph, concepts))
+            self._write_artifact(
+                batch_index=batch_index,
+                paragraphs=batch,
+                payload=payload,
+                mentions=batch_mentions,
+            )
+            mentions.extend(batch_mentions)
+            processed += len(batch)
+        report(processed, None)
+        return mentions
+
+    HeuristicConceptExtractor.extract = heuristic_extract_with_progress
+    SpacyConceptExtractor._extract_with_spacy = (  # pyright: ignore[reportPrivateUsage]
+        spacy_extract_with_progress
+    )
+    LLMConceptExtractor.extract = llm_extract_with_progress
+    try:
+        yield
+    finally:
+        HeuristicConceptExtractor.extract = original_heuristic_extract
+        SpacyConceptExtractor._extract_with_spacy = (  # pyright: ignore[reportPrivateUsage]
+            original_spacy_extract_with_spacy
+        )
+        LLMConceptExtractor.extract = original_llm_extract
+
+
 def _paragraph_record_to_labelrag_paragraph(record: ParagraphRecord) -> Paragraph:
     """Convert one blograg paragraph record into a labelrag paragraph."""
 
@@ -200,6 +356,15 @@ def _paragraph_record_to_labelrag_paragraph(record: ParagraphRecord) -> Paragrap
         text=record.text,
         metadata=_paragraph_record_to_dict(record),
     )
+
+
+def _paragraph_preview(text: str, *, limit: int = 72) -> str:
+    """Return a compact one-line paragraph preview for progress output."""
+
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
 
 
 def _paragraph_record_to_dict(record: ParagraphRecord) -> dict[str, Any]:
