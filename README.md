@@ -39,6 +39,13 @@ python -m pip install -e '.[dev]'
 
 ## CLI
 
+Initialize or inspect persistent defaults and local provider secrets:
+
+```bash
+blograg config wizard
+blograg config show
+```
+
 Build a fresh local index:
 
 ```bash
@@ -54,6 +61,24 @@ blograg serve --index-dir /path/to/index
 `serve` does not rebuild automatically. If the index is missing or incomplete,
 run `build` first.
 
+Start the HTTP MCP server in the background:
+
+```bash
+blograg start --index-dir /path/to/index
+```
+
+Inspect managed server status:
+
+```bash
+blograg status
+```
+
+Stop the managed background server:
+
+```bash
+blograg stop
+```
+
 ## MCP Client Setup
 
 `blograg` exposes an MCP server over Streamable HTTP through:
@@ -62,108 +87,83 @@ run `build` first.
 blograg serve --index-dir /path/to/index
 ```
 
-For project-local client registration, this repository also includes:
-
-- `scripts/serve_mcp.sh`
-  - starts the HTTP MCP server in the foreground from this repository's `.venv`
-  - reads the index path from `BLOGRAG_INDEX_DIR`
-  - automatically loads `.env.local` from the repository root when present
-  - defaults to `index/` in the repository root
-- `scripts/restart_mcp_http.sh`
-  - restarts the local HTTP MCP server in the background
-  - writes a PID file at `/tmp/blograg-mcp-http.pid`
-  - writes logs to `/tmp/blograg-mcp-http.log`
-- `scripts/stop_mcp_http.sh`
-  - stops the background HTTP MCP server started through the PID file
-- `scripts/setup_mcp.sh`
-  - optionally builds the index
-  - restarts the local HTTP MCP server
-  - registers the server URL for `codex`, `openclaw`, or both
-
-## Service Lifecycle
-
-Use the wrapper scripts when you want a project-local HTTP MCP service:
-
-Start in the foreground for local debugging:
+Register the MCP endpoint for Codex and/or OpenClaw:
 
 ```bash
-bash scripts/serve_mcp.sh
+blograg register --client codex
+blograg register --client openclaw
+blograg register --client both
 ```
 
-Restart in the background:
+If you want a managed local HTTP service first:
 
 ```bash
-bash scripts/restart_mcp_http.sh
+blograg start --index-dir /path/to/index
+blograg register --client both
 ```
 
-Stop the background server:
+You can also register a specific URL directly:
 
 ```bash
-bash scripts/stop_mcp_http.sh
-```
-
-Register the MCP endpoint for Codex and OpenClaw:
-
-```bash
-bash scripts/setup_mcp.sh --client both
-```
-
-`setup_mcp.sh` is a convenience entry point for registration. It is not a
-process manager. If you need to restart or stop the local HTTP service later,
-use `restart_mcp_http.sh` and `stop_mcp_http.sh` directly.
-
-One-command registration examples:
-
-```bash
-scripts/setup_mcp.sh --client codex --blog-dir /path/to/blog
-scripts/setup_mcp.sh --client openclaw --blog-dir /path/to/blog
-scripts/setup_mcp.sh --client both --blog-dir /path/to/blog
-```
-
-If you already have a built index, point registration at it directly:
-
-```bash
-scripts/setup_mcp.sh \
-  --client both \
-  --index-dir /path/to/index
-```
-
-If you want to rebuild before registration:
-
-```bash
-scripts/setup_mcp.sh \
+blograg register \
   --client codex \
-  --blog-dir /path/to/blog \
-  --index-dir /path/to/index \
-  --rebuild
+  --server-name blograg-local \
+  --url http://127.0.0.1:8765/mcp
 ```
 
 The generated registrations point clients at a local Streamable HTTP endpoint
 instead of a stdio subprocess. That avoids stdio transport breakage from noisy
 third-party model-loading logs and keeps Codex/OpenClaw on the same stable URL.
 
-## Local Env File
+## Persistent Config
+
+`blograg` now supports persistent user-level config and secrets:
+
+- `config.toml`
+- `secrets.toml`
+
+Default locations:
+
+- macOS/Linux: `~/.config/blograg/`
+- Windows: `%AppData%/blograg/`
+
+Useful commands:
+
+```bash
+blograg config path
+blograg config show
+blograg config set default_index_dir /path/to/index
+blograg config set build.llm_model mistral-small
+blograg config set-secret mistral --api-key your-key-here
+```
+
+`config show` masks secret values and reports only whether each provider key is
+configured.
+
+## LLM Credentials
 
 If your index was built with `--concept-extractor llm`, upstream query analysis
 still needs the corresponding provider API key at serve time.
 
-The recommended project-local setup is a root `.env.local` file that is loaded
-by `scripts/serve_mcp.sh` before it starts `blograg serve`.
+You can either:
 
-Example `.env.local`:
+- store the key through `blograg config set-secret ...`
+- or continue providing it through environment variables
+
+Example persistent secret setup:
+
+```bash
+blograg config set-secret mistral --api-key your-key-here
+```
+
+Example environment variable setup:
 
 ```bash
 MISTRAL_API_KEY=your-key-here
 ```
 
-Then the one-command setup remains the same:
-
-```bash
-bash scripts/setup_mcp.sh --client both --index-dir /path/to/index
-```
-
-Because the wrapper script loads `.env.local`, neither Codex nor OpenClaw needs
-to store the API key directly in their MCP configuration.
+If you configure both an environment variable and a stored secret, explicit CLI
+arguments still take precedence over persisted defaults.
 
 ## Concept Extraction Modes
 
@@ -217,9 +217,11 @@ uses the fitted upstream concept-extraction path.
 Example:
 
 ```bash
-MISTRAL_API_KEY=your-key-here \
 blograg serve --index-dir /path/to/index
 ```
+
+When the matching provider secret is stored through `blograg config set-secret`,
+you do not need to export the API key again before `serve`.
 
 ## MCP Tool
 
