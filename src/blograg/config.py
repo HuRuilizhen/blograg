@@ -10,7 +10,7 @@ from labelgen import LabelGeneratorConfig
 from labelrag import RAGPipelineConfig, RetrievalConfig
 
 ConceptExtractorMode = Literal["spacy", "heuristic", "llm"]
-LLMProvider = Literal["openai", "mistral", "qwen", "ollama"]
+LLMProvider = Literal["openai", "mistral", "qwen", "ollama", "deepseek"]
 PersistenceFormat = Literal["json", "json.gz"]
 LABELGEN_CACHE_DIR_ENV_VAR = "LABELGEN_CACHE_DIR"
 

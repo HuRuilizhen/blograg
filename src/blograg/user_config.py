@@ -15,16 +15,17 @@ from blograg.config import ConceptExtractorMode, LLMProvider
 
 TransportMode = Literal["streamable-http", "stdio"]
 LLMOutputContractMode = Literal["auto", "json_schema", "json_object", "prompt_only"]
-SecretProvider = Literal["openai", "mistral", "qwen", "ollama"]
+SecretProvider = Literal["openai", "mistral", "qwen", "ollama", "deepseek"]
 _DEFAULT_API_KEY_ENV_VARS: dict[SecretProvider, str] = {
     "openai": "OPENAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "qwen": "DASHSCOPE_API_KEY",
     "ollama": "OLLAMA_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 _CONFIG_DIR_ENV_VAR = "BLOGRAG_CONFIG_DIR"
 _CONCEPT_EXTRACTOR_VALUES = {"spacy", "heuristic", "llm"}
-_LLM_PROVIDER_VALUES = {"openai", "mistral", "qwen", "ollama"}
+_LLM_PROVIDER_VALUES = {"openai", "mistral", "qwen", "ollama", "deepseek"}
 _LLM_OUTPUT_CONTRACT_VALUES = {"auto", "json_schema", "json_object", "prompt_only"}
 _TRANSPORT_VALUES = {"streamable-http", "stdio"}
 TomlScalar = str | int | bool
@@ -74,6 +75,7 @@ class ProviderSecrets:
     mistral: str | None = None
     qwen: str | None = None
     ollama: str | None = None
+    deepseek: str | None = None
 
 
 @dataclass(slots=True)
@@ -180,6 +182,7 @@ def load_provider_secrets() -> ProviderSecrets:
         mistral=_load_provider_api_key(providers_section, "mistral"),
         qwen=_load_provider_api_key(providers_section, "qwen"),
         ollama=_load_provider_api_key(providers_section, "ollama"),
+        deepseek=_load_provider_api_key(providers_section, "deepseek"),
     )
 
 
@@ -196,6 +199,7 @@ def save_provider_secrets(secrets: ProviderSecrets) -> None:
                     "mistral": {"api_key": secrets.mistral},
                     "qwen": {"api_key": secrets.qwen},
                     "ollama": {"api_key": secrets.ollama},
+                    "deepseek": {"api_key": secrets.deepseek},
                 }
             )
         },
@@ -246,6 +250,7 @@ def secret_status_map(secrets: ProviderSecrets) -> dict[str, bool]:
         "mistral": secrets.mistral is not None,
         "qwen": secrets.qwen is not None,
         "ollama": secrets.ollama is not None,
+        "deepseek": secrets.deepseek is not None,
     }
 
 
@@ -428,7 +433,7 @@ def known_config_keys() -> list[str]:
 def known_secret_providers() -> list[str]:
     """Return supported secret provider keys."""
 
-    return ["openai", "mistral", "qwen", "ollama"]
+    return ["openai", "mistral", "qwen", "ollama", "deepseek"]
 
 
 def _load_provider_api_key(

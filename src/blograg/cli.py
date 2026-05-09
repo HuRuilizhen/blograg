@@ -654,14 +654,16 @@ def _provider_secret_context(
     )
 
 
-def _parse_secret_provider(provider: str) -> Literal["openai", "mistral", "qwen", "ollama"]:
+def _parse_secret_provider(
+    provider: str,
+) -> Literal["openai", "mistral", "qwen", "ollama", "deepseek"]:
     if provider not in known_secret_providers():
         typer.echo(
             "Unsupported provider. Supported providers: " + ", ".join(known_secret_providers()),
             err=True,
         )
         raise typer.Exit(code=1)
-    return cast(Literal["openai", "mistral", "qwen", "ollama"], provider)
+    return cast(Literal["openai", "mistral", "qwen", "ollama", "deepseek"], provider)
 
 
 def _blank_to_none(value: str) -> str | None:
