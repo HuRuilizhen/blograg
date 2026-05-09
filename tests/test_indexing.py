@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Barrier, Lock, Thread
+from time import sleep
+from types import SimpleNamespace
 
 import pytest
 
-from blograg.config import BlogRAGConfig
-from blograg.indexing import build_index, load_index
+from blograg.config import BlogRAGConfig, build_config
+from blograg.indexing import BlogRAGIndex, build_index, load_index
+from blograg.models import ParagraphRecord
 from blograg.version import __version__
 from tests.testsupport import FakeEmbeddingProvider
 
@@ -215,6 +219,72 @@ def test_retrieve_paragraphs_rejects_non_positive_top_k(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="top_k must be greater than zero"):
         index.retrieve_paragraphs("section", top_k=0)
+
+
+def test_retrieve_paragraphs_serializes_pipeline_limit_override() -> None:
+    active_calls = 0
+    max_active_calls = 0
+    observed_limits: list[int] = []
+    state_lock = Lock()
+    start_barrier = Barrier(2)
+
+    class _FakePipeline:
+        def __init__(self) -> None:
+            self.config = SimpleNamespace(retrieval=SimpleNamespace(max_paragraphs=8))
+
+        def build_context(self, query: str) -> SimpleNamespace:
+            del query
+            nonlocal active_calls, max_active_calls
+            with state_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+                observed_limits.append(self.config.retrieval.max_paragraphs)
+            sleep(0.05)
+            with state_lock:
+                active_calls -= 1
+            return SimpleNamespace(
+                metadata={"retrieval_strategy": "test"},
+                retrieved_paragraphs=[
+                    SimpleNamespace(
+                        paragraph_id="post::p001",
+                        text="Paragraph body",
+                        retrieval_score=1.0,
+                    )
+                ],
+            )
+
+    index = BlogRAGIndex(
+        pipeline=_FakePipeline(),  # type: ignore[arg-type]
+        paragraph_records={
+            "post::p001": ParagraphRecord(
+                paragraph_id="post::p001",
+                text="Paragraph body",
+                post_title="Post",
+                slug="post",
+                section_heading="Section",
+                source_path="_posts/post.md",
+                order_in_post=1,
+            )
+        },
+        config=build_config(),
+    )
+
+    def run_retrieval(top_k: int) -> None:
+        start_barrier.wait()
+        results = index.retrieve_paragraphs("query", top_k=top_k)
+        assert len(results) == 1
+
+    first_thread = Thread(target=run_retrieval, args=(1,))
+    second_thread = Thread(target=run_retrieval, args=(2,))
+
+    first_thread.start()
+    second_thread.start()
+    first_thread.join()
+    second_thread.join()
+
+    assert max_active_calls == 1
+    assert sorted(observed_limits) == [1, 2]
+    assert index.pipeline.config.retrieval.max_paragraphs == 8
 
 
 def test_build_index_rejects_empty_blog(tmp_path: Path) -> None:

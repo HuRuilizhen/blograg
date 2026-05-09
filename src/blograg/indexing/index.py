@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import Any, cast
 
 from labelrag import EmbeddingProvider, Paragraph, RAGPipeline
@@ -52,6 +53,7 @@ class BlogRAGIndex:
     pipeline: RAGPipeline
     paragraph_records: dict[str, ParagraphRecord]
     config: BlogRAGConfig
+    _retrieve_lock: Lock = field(init=False, repr=False, default_factory=Lock)
 
     def retrieve_paragraphs(self, query: str, top_k: int | None = None) -> list[ParagraphResult]:
         """Retrieve structured paragraph-first results for one query."""
@@ -60,12 +62,15 @@ class BlogRAGIndex:
         if requested_top_k <= 0:
             raise ValueError("top_k must be greater than zero.")
 
-        original_limit = self.pipeline.config.retrieval.max_paragraphs
-        self.pipeline.config.retrieval.max_paragraphs = requested_top_k
-        try:
-            retrieval_result = self.pipeline.build_context(query)
-        finally:
-            self.pipeline.config.retrieval.max_paragraphs = original_limit
+        # `labelrag` currently reads `max_paragraphs` from shared pipeline config
+        # during retrieval, so serialize this temporary override per index instance.
+        with self._retrieve_lock:
+            original_limit = self.pipeline.config.retrieval.max_paragraphs
+            self.pipeline.config.retrieval.max_paragraphs = requested_top_k
+            try:
+                retrieval_result = self.pipeline.build_context(query)
+            finally:
+                self.pipeline.config.retrieval.max_paragraphs = original_limit
 
         retrieval_strategy = str(retrieval_result.metadata.get("retrieval_strategy", "unknown"))
         return [
