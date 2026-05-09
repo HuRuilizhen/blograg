@@ -14,7 +14,7 @@ from blograg.mcp import create_mcp_server
 app = typer.Typer(help="Build and serve a local Jekyll-blog paragraph retriever.")
 _BLOG_DIR_OPTION = typer.Option(..., exists=True, file_okay=False, dir_okay=True)
 _INDEX_DIR_BUILD_OPTION = typer.Option(..., file_okay=False, dir_okay=True)
-_INDEX_DIR_SERVE_OPTION = typer.Option(..., exists=True, file_okay=False, dir_okay=True)
+_INDEX_DIR_SERVE_OPTION = typer.Option(..., file_okay=False, dir_okay=True)
 _CONCEPT_EXTRACTOR_OPTION = typer.Option(
     "heuristic",
     help="Concept extraction mode to use during build: spacy, heuristic, or llm.",
@@ -118,7 +118,12 @@ def serve(
 ) -> None:
     """Load an existing local index and start the MCP server."""
 
-    index = load_index(index_dir=index_dir)
+    try:
+        index = load_index(index_dir=index_dir)
+    except (FileNotFoundError, RuntimeError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
+
     cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
     if cache_dir is not None:
         index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
