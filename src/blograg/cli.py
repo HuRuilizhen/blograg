@@ -21,7 +21,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from blograg.client_registration import register_client
+from blograg.client_registration import get_client_registration_status, register_client
 from blograg.config import (
     ConceptExtractorMode,
     LabelFreeFallbackStrategy,
@@ -167,8 +167,8 @@ _LOG_TAIL_OPTION = typer.Option(
     help="Number of recent log lines to print before exiting or following.",
 )
 _REGISTER_CLIENT_OPTION = typer.Option(
-    ...,
-    help="MCP client to register: codex, openclaw, or both.",
+    None,
+    help="MCP client to register: codex or openclaw.",
 )
 app.add_typer(config_app, name="config")
 
@@ -601,28 +601,49 @@ def doctor() -> None:
 
 @app.command()
 def register(
-    client: Literal["codex", "openclaw", "both"] = _REGISTER_CLIENT_OPTION,
+    client: Literal["codex", "openclaw"] | None = _REGISTER_CLIENT_OPTION,
     server_name: str = typer.Option("blograg", help="MCP server name to register."),
     host: str | None = _HOST_OPTION,
     port: int | None = _PORT_OPTION,
     url: str | None = typer.Option(None, help="Optional MCP URL override."),
+    show: bool = typer.Option(
+        False,
+        "--show",
+        help="Show which supported clients have this MCP server configured.",
+    ),
 ) -> None:
-    """Register the MCP endpoint with Codex and/or OpenClaw."""
+    """Register the MCP endpoint with Codex or OpenClaw, or inspect current bindings."""
+
+    if show:
+        rows: list[tuple[str, str, str]] = []
+        for supported_client in ("codex", "openclaw"):
+            status = get_client_registration_status(
+                client=supported_client,
+                server_name=server_name,
+            )
+            detail = status.detail
+            if status.url is not None:
+                detail = f"{detail} URL: {status.url}"
+            rows.append((supported_client, _status_label(status.configured), detail))
+        _print_client_status_table("Bindings", rows)
+        return
+
+    if client is None:
+        typer.echo("Provide `--client` or use `--show` to inspect current bindings.", err=True)
+        raise typer.Exit(code=1)
 
     persisted_config = load_cli_config()
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
     resolved_url = url or build_server_url(host=resolved_host, port=resolved_port)
-    clients = ["codex", "openclaw"] if client == "both" else [client]
 
     try:
-        for current_client in clients:
-            message = register_client(
-                client=cast(Literal["codex", "openclaw"], current_client),
-                server_name=server_name,
-                url=resolved_url,
-            )
-            typer.echo(message)
+        message = register_client(
+            client=client,
+            server_name=server_name,
+            url=resolved_url,
+        )
+        typer.echo(message)
     except (RuntimeError, subprocess.CalledProcessError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
@@ -1112,6 +1133,24 @@ def _print_doctor_table(rows: list[tuple[str, str, str, str]]) -> None:
         Panel(
             table,
             title=Text("Doctor", style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _print_client_status_table(title: str, rows: list[tuple[str, str, str]]) -> None:
+    table = Table(box=None, header_style="bold", show_edge=False, pad_edge=False)
+    table.add_column("Client", style="bold cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Detail", overflow="fold")
+    for client, status, detail in rows:
+        table.add_row(client, status, detail)
+    _console.print(
+        Panel(
+            table,
+            title=Text(title, style="dim"),
             title_align="left",
             border_style="dim",
             box=box.ROUNDED,

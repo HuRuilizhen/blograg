@@ -73,6 +73,19 @@ Inspect managed server status:
 blograg status
 ```
 
+Inspect managed client bindings:
+
+```bash
+blograg register --show
+```
+
+Inspect managed server logs:
+
+```bash
+blograg logs
+blograg logs --follow
+```
+
 Stop the managed background server:
 
 ```bash
@@ -92,14 +105,14 @@ Register the MCP endpoint for Codex and/or OpenClaw:
 ```bash
 blograg register --client codex
 blograg register --client openclaw
-blograg register --client both
 ```
 
 If you want a managed local HTTP service first:
 
 ```bash
 blograg start --index-dir /path/to/index
-blograg register --client both
+blograg register --client codex
+blograg register --client openclaw
 ```
 
 You can also register a specific URL directly:
@@ -240,6 +253,7 @@ Each result includes:
 - `section_heading`
 - `trace.retrieval_strategy`
 - `trace.score`
+- `trace.score_kind`
 
 ## Paragraph Segmentation Rules
 

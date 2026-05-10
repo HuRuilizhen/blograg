@@ -882,7 +882,42 @@ def test_doctor_command_fails_when_key_setup_is_missing(
     assert "Doctor found" in result.stderr
 
 
-def test_register_command_registers_both_clients(
+def test_register_show_reports_client_registration_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    del tmp_path
+
+    def fake_get_client_registration_status(*, client: str, server_name: str) -> object:
+        assert server_name == "blograg-local"
+        if client == "codex":
+            return SimpleNamespace(
+                configured=True,
+                detail="Configured for http://127.0.0.1:8765/mcp.",
+                url="http://127.0.0.1:8765/mcp",
+            )
+        return SimpleNamespace(
+            configured=False,
+            detail="`blograg-local` is not configured.",
+            url=None,
+        )
+
+    monkeypatch.setattr(
+        blograg.cli,
+        "get_client_registration_status",
+        fake_get_client_registration_status,
+    )
+
+    result = runner.invoke(app, ["register", "--show", "--server-name", "blograg-local"])
+
+    assert result.exit_code == 0
+    assert "Bindings" in result.stdout
+    assert "codex" in result.stdout
+    assert "openclaw" in result.stdout
+    assert "http://127.0.0.1:8765/mcp" in result.stdout
+    assert "not configured" in result.stdout
+
+
+def test_register_command_registers_single_client(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
@@ -895,15 +930,18 @@ def test_register_command_registers_both_clients(
 
     monkeypatch.setattr(blograg.cli, "register_client", fake_register_client)
 
-    result = runner.invoke(app, ["register", "--client", "both", "--server-name", "blograg-local"])
+    result = runner.invoke(app, ["register", "--client", "codex", "--server-name", "blograg-local"])
 
     assert result.exit_code == 0
-    assert calls == [
-        ("codex", "blograg-local", "http://0.0.0.0:8877/mcp"),
-        ("openclaw", "blograg-local", "http://0.0.0.0:8877/mcp"),
-    ]
+    assert calls == [("codex", "blograg-local", "http://0.0.0.0:8877/mcp")]
     assert "registered codex" in result.stdout
-    assert "registered openclaw" in result.stdout
+
+
+def test_register_requires_client_without_show() -> None:
+    result = runner.invoke(app, ["register"])
+
+    assert result.exit_code == 1
+    assert "Provide `--client` or use `--show`" in result.stderr
 
 
 def test_register_command_reports_registration_failures(monkeypatch: pytest.MonkeyPatch) -> None:
