@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Literal, cast
 
 import typer
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from blograg.client_registration import register_client
 from blograg.config import (
@@ -51,6 +56,8 @@ from blograg.user_config import (
 
 app = typer.Typer(help="Build and serve a local Jekyll-blog paragraph retriever.")
 config_app = typer.Typer(help="Manage persistent blograg defaults and local secrets.")
+_console = Console()
+_error_console = Console(stderr=True)
 _BLOG_DIR_OPTION = typer.Option(None, file_okay=False, dir_okay=True)
 _INDEX_DIR_BUILD_OPTION = typer.Option(None, file_okay=False, dir_okay=True)
 _INDEX_DIR_SERVE_OPTION = typer.Option(None, file_okay=False, dir_okay=True)
@@ -390,18 +397,19 @@ def status(
         mcp_url=resolved_mcp_url,
         health_url=resolved_health_url,
     )
-    server_state = "running" if observed_status.process_running else "stopped"
-    http_state = "ready" if observed_status.http_ready else "not ready"
-    typer.echo(f"Server: {server_state}")
-    typer.echo(f"PID: {observed_status.pid if observed_status.pid is not None else 'missing'}")
-    typer.echo(f"MCP endpoint: {observed_status.mcp_url}")
-    typer.echo(f"Health endpoint: {observed_status.health_url}")
-    typer.echo(f"PID file: {observed_status.pid_file}")
-    typer.echo(f"Log file: {observed_status.log_file}")
-    typer.echo(f"HTTP status: {http_state}")
+    rows = [
+        ("Server", "running" if observed_status.process_running else "stopped"),
+        ("PID", str(observed_status.pid) if observed_status.pid is not None else "missing"),
+        ("MCP endpoint", observed_status.mcp_url),
+        ("Health endpoint", observed_status.health_url),
+        ("PID file", str(observed_status.pid_file)),
+        ("Log file", str(observed_status.log_file)),
+        ("HTTP status", "ready" if observed_status.http_ready else "not ready"),
+    ]
     if observed_status.http_status_code is not None:
-        typer.echo(f"HTTP code: {observed_status.http_status_code}")
-    typer.echo(f"Detail: {observed_status.detail}")
+        rows.append(("HTTP code", str(observed_status.http_status_code)))
+    rows.append(("Detail", observed_status.detail))
+    _print_key_value_table("Status", rows)
 
 
 @app.command()
@@ -413,54 +421,39 @@ def doctor() -> None:
     config_paths = get_config_paths()
     issues: list[str] = []
 
-    typer.echo("Configuration")
-    typer.echo(
-        _doctor_line(
+    doctor_rows: list[tuple[str, str, str, str]] = [
+        (
+            "Configuration",
             "Config file",
-            config_paths.config_path.is_file(),
+            _status_label(config_paths.config_path.is_file()),
             str(config_paths.config_path),
-            issues,
-        )
-    )
-    typer.echo(
-        _doctor_line(
+        ),
+        (
+            "Configuration",
             "Secrets file",
-            config_paths.secrets_path.is_file(),
+            _status_label(config_paths.secrets_path.is_file()),
             str(config_paths.secrets_path),
-            issues,
-        )
-    )
+        ),
+    ]
+    if not config_paths.config_path.is_file():
+        issues.append(f"Config file: {config_paths.config_path}")
+    if not config_paths.secrets_path.is_file():
+        issues.append(f"Secrets file: {config_paths.secrets_path}")
 
-    typer.echo("")
-    typer.echo("Index")
     default_index_dir = _coerce_path(persisted_config.default_index_dir)
     if default_index_dir is None:
-        typer.echo(
-            _doctor_line(
-                "Default index",
-                False,
-                "No default_index_dir configured.",
-                issues,
-            )
-        )
+        doctor_rows.append(("Index", "Default index", "WARN", "No default_index_dir configured."))
+        issues.append("Default index: No default_index_dir configured.")
     else:
-        typer.echo(
-            _doctor_line(
-                "Default index",
-                True,
-                str(default_index_dir),
-                issues,
-            )
-        )
+        doctor_rows.append(("Index", "Default index", "OK", str(default_index_dir)))
         index_issues = _validate_index_directory(default_index_dir)
         if index_issues:
             for issue in index_issues:
-                typer.echo(_doctor_line("Index artifact", False, issue, issues))
+                doctor_rows.append(("Index", "Index artifact", "WARN", issue))
+                issues.append(f"Index artifact: {issue}")
         else:
-            typer.echo(_doctor_line("Index artifacts", True, "Index looks complete.", issues))
+            doctor_rows.append(("Index", "Index artifacts", "OK", "Index looks complete."))
 
-    typer.echo("")
-    typer.echo("Service")
     resolved_host = persisted_config.serve.host or "127.0.0.1"
     resolved_port = persisted_config.serve.port or 8765
     status = get_server_status(
@@ -469,75 +462,63 @@ def doctor() -> None:
         mcp_url=build_server_url(host=resolved_host, port=resolved_port),
         health_url=build_health_url(host=resolved_host, port=resolved_port),
     )
-    typer.echo(
-        _doctor_line(
-            "Managed process",
-            status.process_running,
-            f"PID {status.pid}" if status.pid is not None else "No PID file.",
-            issues,
-        )
+    process_detail = f"PID {status.pid}" if status.pid is not None else "No PID file."
+    doctor_rows.append(
+        ("Service", "Managed process", _status_label(status.process_running), process_detail)
     )
-    typer.echo(
-        _doctor_line(
-            "HTTP health",
-            status.http_ready,
-            status.detail,
-            issues,
-        )
-    )
+    if not status.process_running:
+        issues.append(f"Managed process: {process_detail}")
+    doctor_rows.append(("Service", "HTTP health", _status_label(status.http_ready), status.detail))
+    if not status.http_ready:
+        issues.append(f"HTTP health: {status.detail}")
 
-    typer.echo("")
-    typer.echo("Clients")
     for client in ("codex", "openclaw"):
         executable = shutil.which(client)
-        typer.echo(
-            _doctor_line(
+        detail = executable or "Not found on PATH."
+        doctor_rows.append(
+            (
+                "Clients",
                 f"{client} executable",
-                executable is not None,
-                executable or "Not found on PATH.",
-                issues,
+                _status_label(executable is not None),
+                detail,
             )
         )
+        if executable is None:
+            issues.append(f"{client} executable: {detail}")
 
-    typer.echo("")
-    typer.echo("LLM")
     extractor = persisted_config.build.concept_extractor or "heuristic"
-    typer.echo(_doctor_line("Extractor mode", True, extractor, issues))
+    doctor_rows.append(("LLM", "Extractor mode", "OK", extractor))
     if extractor == "llm":
         model = persisted_config.build.llm_model
         provider = persisted_config.build.llm_provider or "mistral"
         env_var = persisted_config.build.llm_api_key_env_var or _default_api_key_env_var(provider)
         secret_present = _provider_secret_present(provider_secrets, provider)
         env_present = bool(env_var and os.environ.get(env_var))
-        typer.echo(_doctor_line("LLM provider", True, provider, issues))
-        typer.echo(
-            _doctor_line(
-                "LLM model",
-                model is not None,
-                model or "Missing build.llm_model.",
-                issues,
-            )
+        doctor_rows.append(("LLM", "LLM provider", "OK", provider))
+        model_detail = model or "Missing build.llm_model."
+        model_ok = model is not None
+        doctor_rows.append(("LLM", "LLM model", _status_label(model_ok), model_detail))
+        if not model_ok:
+            issues.append(f"LLM model: {model_detail}")
+        credential_ok = secret_present or env_present
+        credential_detail = (
+            f"Secret configured for {provider}."
+            if secret_present
+            else f"Environment variable {env_var} is set."
+            if env_present
+            else f"Missing secret or environment variable {env_var}."
         )
-        typer.echo(
-            _doctor_line(
-                "LLM credential",
-                secret_present or env_present,
-                (
-                    f"Secret configured for {provider}."
-                    if secret_present
-                    else f"Environment variable {env_var} is set."
-                    if env_present
-                    else f"Missing secret or environment variable {env_var}."
-                ),
-                issues,
-            )
+        doctor_rows.append(
+            ("LLM", "LLM credential", _status_label(credential_ok), credential_detail)
         )
+        if not credential_ok:
+            issues.append(f"LLM credential: {credential_detail}")
 
-    typer.echo("")
+    _print_doctor_table(doctor_rows)
     if issues:
-        typer.echo(f"Doctor found {len(issues)} issue(s).", err=True)
+        _error_console.print(f"Doctor found {len(issues)} issue(s).")
         raise typer.Exit(code=1)
-    typer.echo("Doctor found no issues.")
+    _console.print("Doctor found no issues.")
 
 
 @app.command()
@@ -574,9 +555,14 @@ def config_path() -> None:
     """Show user config and secret file locations."""
 
     paths = get_config_paths()
-    typer.echo(f"config_dir={paths.config_dir}")
-    typer.echo(f"config_file={paths.config_path}")
-    typer.echo(f"secrets_file={paths.secrets_path}")
+    _print_key_value_table(
+        "Config paths",
+        [
+            ("Config dir", str(paths.config_dir)),
+            ("Config file", str(paths.config_path)),
+            ("Secrets file", str(paths.secrets_path)),
+        ],
+    )
 
 
 @config_app.command("show")
@@ -586,19 +572,24 @@ def config_show() -> None:
     paths = get_config_paths()
     config = load_cli_config()
     secrets = load_provider_secrets()
-    typer.echo(f"config_dir={paths.config_dir}")
-    typer.echo(f"config_file={paths.config_path}")
-    typer.echo(f"secrets_file={paths.secrets_path}")
+    _print_key_value_table(
+        "Config paths",
+        [
+            ("Config dir", str(paths.config_dir)),
+            ("Config file", str(paths.config_path)),
+            ("Secrets file", str(paths.secrets_path)),
+        ],
+    )
 
     values = config_value_map(config)
     if values:
-        typer.echo("[config]")
-        for key, value in values.items():
-            typer.echo(f"{key} = {value}")
+        _print_key_value_table("Config", list(values.items()))
 
-    typer.echo("[secrets]")
-    for provider, configured in secret_status_map(secrets).items():
-        typer.echo(f"{provider} = {'configured' if configured else 'missing'}")
+    secret_rows = [
+        (provider, "configured" if configured else "missing")
+        for provider, configured in secret_status_map(secrets).items()
+    ]
+    _print_key_value_table("Secrets", secret_rows)
 
 
 @config_app.command("set")
@@ -875,11 +866,44 @@ def _validate_index_directory(index_dir: Path) -> list[str]:
     return issues
 
 
-def _doctor_line(label: str, ok: bool, detail: str, issues: list[str]) -> str:
-    if not ok:
-        issues.append(f"{label}: {detail}")
-    state = "OK" if ok else "WARN"
-    return f"{state:<4} {label}: {detail}"
+def _status_label(ok: bool) -> str:
+    return "OK" if ok else "WARN"
+
+
+def _print_key_value_table(title: str, rows: list[tuple[str, str]]) -> None:
+    table = Table(box=None, show_header=False, pad_edge=False, show_edge=False)
+    table.add_column(style="bold cyan", no_wrap=True, min_width=12)
+    table.add_column(overflow="fold")
+    for field, value in rows:
+        table.add_row(field, value)
+    _console.print(
+        Panel(
+            table,
+            title=Text(title, style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _print_doctor_table(rows: list[tuple[str, str, str, str]]) -> None:
+    table = Table(box=None, header_style="bold", show_edge=False, pad_edge=False)
+    table.add_column("Section", style="bold cyan", no_wrap=True)
+    table.add_column("Check", style="bold cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Detail", overflow="fold")
+    for section, check, status, detail in rows:
+        table.add_row(section, check, status, detail)
+    _console.print(
+        Panel(
+            table,
+            title=Text("Doctor", style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
 
 
 def _provider_secret_present(secrets: ProviderSecrets, provider: LLMProvider) -> bool:

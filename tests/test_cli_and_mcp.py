@@ -590,8 +590,13 @@ def test_config_commands_persist_values_and_mask_secrets(
     assert set_result.exit_code == 0
     assert secret_result.exit_code == 0
     assert show_result.exit_code == 0
-    assert f"default_index_dir = {tmp_path / 'index'}" in show_result.stdout
-    assert "mistral = configured" in show_result.stdout
+    assert "Config paths" in show_result.stdout
+    assert "Config" in show_result.stdout
+    assert "Secrets" in show_result.stdout
+    assert "default_index_dir" in show_result.stdout
+    assert "index" in show_result.stdout
+    assert "mistral" in show_result.stdout
+    assert "configured" in show_result.stdout
     assert "secret-value" not in show_result.stdout
 
 
@@ -678,11 +683,17 @@ def test_status_command_reports_managed_runtime_state(
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
-    assert "Server: running" in result.stdout
-    assert "MCP endpoint: http://0.0.0.0:8877/mcp" in result.stdout
-    assert "Health endpoint: http://0.0.0.0:8877/healthz" in result.stdout
-    assert "HTTP status: ready" in result.stdout
-    assert "HTTP code: 200" in result.stdout
+    assert "Status" in result.stdout
+    assert "Server" in result.stdout
+    assert "running" in result.stdout
+    assert "MCP endpoint" in result.stdout
+    assert "http://0.0.0.0:8877/mcp" in result.stdout
+    assert "Health endpoint" in result.stdout
+    assert "http://0.0.0.0:8877/healthz" in result.stdout
+    assert "HTTP status" in result.stdout
+    assert "ready" in result.stdout
+    assert "HTTP code" in result.stdout
+    assert "200" in result.stdout
 
 
 def test_doctor_command_reports_actionable_checks(
@@ -732,9 +743,14 @@ def test_doctor_command_reports_actionable_checks(
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 0
+    assert "Doctor" in result.stdout
+    assert "Configuration" in result.stdout
+    assert "Clients" in result.stdout
     assert "Doctor found no issues." in result.stdout
-    assert "OK   Index artifacts: Index looks complete." in result.stdout
-    assert "OK   codex executable: /usr/bin/codex" in result.stdout
+    assert "Index artifacts" in result.stdout
+    assert "Index looks complete." in result.stdout
+    assert "codex executable" in result.stdout
+    assert "/usr/bin/codex" in result.stdout
 
 
 def test_doctor_command_fails_when_key_setup_is_missing(
@@ -776,7 +792,8 @@ def test_doctor_command_fails_when_key_setup_is_missing(
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 1
-    assert "WARN LLM model: Missing build.llm_model." in result.stdout
+    assert "LLM model" in result.stdout
+    assert "Missing build.llm_model." in result.stdout
     assert "Doctor found" in result.stderr
 
 
