@@ -7,7 +7,7 @@ import stat
 import tomllib
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -52,40 +52,64 @@ TomlTable = dict[str, TomlValue]
 class BuildDefaults:
     """Persisted CLI defaults for `blograg build`."""
 
-    concept_extractor: ConceptExtractorMode | None = None
-    llm_provider: LLMProvider | None = None
-    llm_model: str | None = None
-    llm_base_url: str | None = None
-    llm_api_key_env_var: str | None = None
-    llm_batch_size: int | None = None
-    llm_max_concepts_per_paragraph: int | None = None
-    llm_output_contract_mode: LLMOutputContractMode | None = None
-    labelgen_cache_dir: str | None = None
+    concept_extractor: ConceptExtractorMode | None = field(
+        default=None,
+        metadata={"display_default": "default: heuristic"},
+    )
+    llm_provider: LLMProvider | None = field(
+        default=None,
+        metadata={"display_default": "default: mistral"},
+    )
+    llm_model: str | None = field(default=None, metadata={"display_default": "unset"})
+    llm_base_url: str | None = field(default=None, metadata={"display_default": "unset"})
+    llm_api_key_env_var: str | None = field(default=None, metadata={"display_default": "unset"})
+    llm_batch_size: int | None = field(default=None, metadata={"display_default": "default: 8"})
+    llm_max_concepts_per_paragraph: int | None = field(
+        default=None,
+        metadata={"display_default": "default: 12"},
+    )
+    llm_output_contract_mode: LLMOutputContractMode | None = field(
+        default=None,
+        metadata={"display_default": "default: auto"},
+    )
+    labelgen_cache_dir: str | None = field(
+        default=None,
+        metadata={"display_default": "default: upstream default (.labelgen-cache)"},
+    )
 
 
 @dataclass(slots=True)
 class ServeDefaults:
     """Persisted CLI defaults for `blograg serve`."""
 
-    host: str | None = None
-    port: int | None = None
-    transport: TransportMode | None = None
+    host: str | None = field(default=None, metadata={"display_default": "default: 127.0.0.1"})
+    port: int | None = field(default=None, metadata={"display_default": "default: 8765"})
+    transport: TransportMode | None = field(
+        default=None,
+        metadata={"display_default": "default: streamable-http"},
+    )
 
 
 @dataclass(slots=True)
 class RetrievalDefaults:
     """Persisted CLI defaults for retrieval behavior."""
 
-    retrieval_strategy: RetrievalStrategy | None = None
-    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = None
+    retrieval_strategy: RetrievalStrategy | None = field(
+        default=None,
+        metadata={"display_default": "default: greedy_label_coverage_semantic_rerank"},
+    )
+    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = field(
+        default=None,
+        metadata={"display_default": "default: semantic_only"},
+    )
 
 
 @dataclass(slots=True)
 class CLIConfig:
     """Top-level persisted user configuration."""
 
-    default_blog_dir: str | None = None
-    default_index_dir: str | None = None
+    default_blog_dir: str | None = field(default=None, metadata={"display_default": "unset"})
+    default_index_dir: str | None = field(default=None, metadata={"display_default": "unset"})
     build: BuildDefaults = field(default_factory=BuildDefaults)
     serve: ServeDefaults = field(default_factory=ServeDefaults)
     retrieval: RetrievalDefaults = field(default_factory=RetrievalDefaults)
@@ -253,75 +277,13 @@ def save_provider_secrets(secrets: ProviderSecrets) -> None:
 def config_value_map(config: CLIConfig) -> dict[str, str]:
     """Return flattened config values for human-readable display."""
 
-    values: dict[str, str] = {}
-    _maybe_add_display_value(values, "default_blog_dir", config.default_blog_dir)
-    _maybe_add_display_value(values, "default_index_dir", config.default_index_dir)
-    _maybe_add_display_value(values, "build.concept_extractor", config.build.concept_extractor)
-    _maybe_add_display_value(values, "build.llm_provider", config.build.llm_provider)
-    _maybe_add_display_value(values, "build.llm_model", config.build.llm_model)
-    _maybe_add_display_value(values, "build.llm_base_url", config.build.llm_base_url)
-    _maybe_add_display_value(values, "build.llm_api_key_env_var", config.build.llm_api_key_env_var)
-    _maybe_add_display_value(
-        values,
-        "build.llm_batch_size",
-        config.build.llm_batch_size,
-    )
-    _maybe_add_display_value(
-        values,
-        "build.llm_max_concepts_per_paragraph",
-        config.build.llm_max_concepts_per_paragraph,
-    )
-    _maybe_add_display_value(
-        values,
-        "build.llm_output_contract_mode",
-        config.build.llm_output_contract_mode,
-    )
-    _maybe_add_display_value(values, "build.labelgen_cache_dir", config.build.labelgen_cache_dir)
-    _maybe_add_display_value(values, "serve.host", config.serve.host)
-    _maybe_add_display_value(values, "serve.port", config.serve.port)
-    _maybe_add_display_value(values, "serve.transport", config.serve.transport)
-    _maybe_add_display_value(
-        values, "retrieval.retrieval_strategy", config.retrieval.retrieval_strategy
-    )
-    _maybe_add_display_value(
-        values,
-        "retrieval.label_free_fallback_strategy",
-        config.retrieval.label_free_fallback_strategy,
-    )
-    return values
+    return dict(_iter_config_display_entries(config, include_unset=False))
 
 
 def config_value_map_all(config: CLIConfig) -> dict[str, str]:
     """Return all known config values, including unset entries and runtime defaults."""
 
-    return {
-        "default_blog_dir": config.default_blog_dir or "unset",
-        "default_index_dir": config.default_index_dir or "unset",
-        "build.concept_extractor": config.build.concept_extractor or "default: heuristic",
-        "build.llm_provider": config.build.llm_provider or "default: mistral",
-        "build.llm_model": config.build.llm_model or "unset",
-        "build.llm_base_url": config.build.llm_base_url or "unset",
-        "build.llm_api_key_env_var": config.build.llm_api_key_env_var or "unset",
-        "build.llm_batch_size": str(config.build.llm_batch_size or "default: 8"),
-        "build.llm_max_concepts_per_paragraph": str(
-            config.build.llm_max_concepts_per_paragraph or "default: 12"
-        ),
-        "build.llm_output_contract_mode": (
-            config.build.llm_output_contract_mode or "default: auto"
-        ),
-        "build.labelgen_cache_dir": (
-            config.build.labelgen_cache_dir or "default: upstream default (.labelgen-cache)"
-        ),
-        "serve.host": config.serve.host or "default: 127.0.0.1",
-        "serve.port": str(config.serve.port or "default: 8765"),
-        "serve.transport": config.serve.transport or "default: streamable-http",
-        "retrieval.retrieval_strategy": (
-            config.retrieval.retrieval_strategy or "default: greedy_label_coverage_semantic_rerank"
-        ),
-        "retrieval.label_free_fallback_strategy": (
-            config.retrieval.label_free_fallback_strategy or "default: semantic_only"
-        ),
-    }
+    return dict(_iter_config_display_entries(config, include_unset=True))
 
 
 def secret_status_map(secrets: ProviderSecrets) -> dict[str, bool]:
@@ -512,24 +474,7 @@ def apply_provider_secret(
 def known_config_keys() -> list[str]:
     """Return supported CLI config keys."""
 
-    return [
-        "default_blog_dir",
-        "default_index_dir",
-        "serve.host",
-        "serve.port",
-        "serve.transport",
-        "build.concept_extractor",
-        "build.llm_provider",
-        "build.llm_model",
-        "build.llm_base_url",
-        "build.llm_api_key_env_var",
-        "build.llm_batch_size",
-        "build.llm_max_concepts_per_paragraph",
-        "build.llm_output_contract_mode",
-        "build.labelgen_cache_dir",
-        "retrieval.retrieval_strategy",
-        "retrieval.label_free_fallback_strategy",
-    ]
+    return [key for key, _ in _iter_config_display_entries(CLIConfig(), include_unset=True)]
 
 
 def known_secret_providers() -> list[str]:
@@ -674,10 +619,30 @@ def _parse_literal(key: str, raw_value: str, allowed_values: set[str]) -> str:
     return raw_value
 
 
-def _maybe_add_display_value(values: dict[str, str], key: str, value: object) -> None:
-    if value is None:
-        return
-    values[key] = str(value)
+def _iter_config_display_entries(
+    value: object,
+    *,
+    prefix: str = "",
+    include_unset: bool,
+) -> Generator[tuple[str, str], None, None]:
+    if not is_dataclass(value):
+        raise TypeError("Expected dataclass config object.")
+
+    for dataclass_field in fields(value):
+        key = f"{prefix}.{dataclass_field.name}" if prefix else dataclass_field.name
+        field_value = getattr(value, dataclass_field.name)
+        if is_dataclass(field_value):
+            yield from _iter_config_display_entries(
+                field_value,
+                prefix=key,
+                include_unset=include_unset,
+            )
+            continue
+        if field_value is None:
+            if include_unset:
+                yield key, str(dataclass_field.metadata.get("display_default", "unset"))
+            continue
+        yield key, str(field_value)
 
 
 def _unknown_config_key_message(key: str) -> str:
