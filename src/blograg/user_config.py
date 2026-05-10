@@ -11,7 +11,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from blograg.config import ConceptExtractorMode, LLMProvider
+from blograg.config import (
+    ConceptExtractorMode,
+    LabelFreeFallbackStrategy,
+    LLMProvider,
+    RetrievalStrategy,
+)
 
 TransportMode = Literal["streamable-http", "stdio"]
 LLMOutputContractMode = Literal["auto", "json_schema", "json_object", "prompt_only"]
@@ -28,6 +33,16 @@ _CONCEPT_EXTRACTOR_VALUES = {"spacy", "heuristic", "llm"}
 _LLM_PROVIDER_VALUES = {"openai", "mistral", "qwen", "ollama", "deepseek"}
 _LLM_OUTPUT_CONTRACT_VALUES = {"auto", "json_schema", "json_object", "prompt_only"}
 _TRANSPORT_VALUES = {"streamable-http", "stdio"}
+_RETRIEVAL_STRATEGY_VALUES = {
+    "greedy_label_coverage_semantic_rerank",
+    "label_gate_semantic_rank",
+}
+_LABEL_FREE_FALLBACK_STRATEGY_VALUES = {
+    "concept_overlap_only",
+    "concept_overlap_semantic_rerank",
+    "concept_gate_semantic_rank",
+    "semantic_only",
+}
 TomlScalar = str | int | bool
 TomlValue = TomlScalar | dict[str, "TomlValue"]
 TomlTable = dict[str, TomlValue]
@@ -58,6 +73,14 @@ class ServeDefaults:
 
 
 @dataclass(slots=True)
+class RetrievalDefaults:
+    """Persisted CLI defaults for retrieval behavior."""
+
+    retrieval_strategy: RetrievalStrategy | None = None
+    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = None
+
+
+@dataclass(slots=True)
 class CLIConfig:
     """Top-level persisted user configuration."""
 
@@ -65,6 +88,7 @@ class CLIConfig:
     default_index_dir: str | None = None
     build: BuildDefaults = field(default_factory=BuildDefaults)
     serve: ServeDefaults = field(default_factory=ServeDefaults)
+    retrieval: RetrievalDefaults = field(default_factory=RetrievalDefaults)
 
 
 @dataclass(slots=True)
@@ -120,6 +144,7 @@ def load_cli_config() -> CLIConfig:
     raw_payload = _load_toml_object(paths.config_path)
     build_section = _load_toml_section(raw_payload.get("build"))
     serve_section = _load_toml_section(raw_payload.get("serve"))
+    retrieval_section = _load_toml_section(raw_payload.get("retrieval"))
     return CLIConfig(
         default_blog_dir=_optional_str(raw_payload.get("default_blog_dir")),
         default_index_dir=_optional_str(raw_payload.get("default_index_dir")),
@@ -156,6 +181,22 @@ def load_cli_config() -> CLIConfig:
             transport=cast(
                 TransportMode | None,
                 _optional_literal(serve_section.get("transport"), _TRANSPORT_VALUES),
+            ),
+        ),
+        retrieval=RetrievalDefaults(
+            retrieval_strategy=cast(
+                RetrievalStrategy | None,
+                _optional_literal(
+                    retrieval_section.get("retrieval_strategy"),
+                    _RETRIEVAL_STRATEGY_VALUES,
+                ),
+            ),
+            label_free_fallback_strategy=cast(
+                LabelFreeFallbackStrategy | None,
+                _optional_literal(
+                    retrieval_section.get("label_free_fallback_strategy"),
+                    _LABEL_FREE_FALLBACK_STRATEGY_VALUES,
+                ),
             ),
         ),
     )
@@ -239,6 +280,14 @@ def config_value_map(config: CLIConfig) -> dict[str, str]:
     _maybe_add_display_value(values, "serve.host", config.serve.host)
     _maybe_add_display_value(values, "serve.port", config.serve.port)
     _maybe_add_display_value(values, "serve.transport", config.serve.transport)
+    _maybe_add_display_value(
+        values, "retrieval.retrieval_strategy", config.retrieval.retrieval_strategy
+    )
+    _maybe_add_display_value(
+        values,
+        "retrieval.label_free_fallback_strategy",
+        config.retrieval.label_free_fallback_strategy,
+    )
     return values
 
 
@@ -311,6 +360,18 @@ def set_config_value(config: CLIConfig, key: str, raw_value: str) -> None:
     if key == "build.labelgen_cache_dir":
         config.build.labelgen_cache_dir = raw_value
         return
+    if key == "retrieval.retrieval_strategy":
+        config.retrieval.retrieval_strategy = cast(
+            RetrievalStrategy,
+            _parse_literal(key, raw_value, _RETRIEVAL_STRATEGY_VALUES),
+        )
+        return
+    if key == "retrieval.label_free_fallback_strategy":
+        config.retrieval.label_free_fallback_strategy = cast(
+            LabelFreeFallbackStrategy,
+            _parse_literal(key, raw_value, _LABEL_FREE_FALLBACK_STRATEGY_VALUES),
+        )
+        return
     raise KeyError(_unknown_config_key_message(key))
 
 
@@ -358,6 +419,12 @@ def unset_config_value(config: CLIConfig, key: str) -> None:
         return
     if key == "build.labelgen_cache_dir":
         config.build.labelgen_cache_dir = None
+        return
+    if key == "retrieval.retrieval_strategy":
+        config.retrieval.retrieval_strategy = None
+        return
+    if key == "retrieval.label_free_fallback_strategy":
+        config.retrieval.label_free_fallback_strategy = None
         return
     raise KeyError(_unknown_config_key_message(key))
 
@@ -427,6 +494,8 @@ def known_config_keys() -> list[str]:
         "build.llm_max_concepts_per_paragraph",
         "build.llm_output_contract_mode",
         "build.labelgen_cache_dir",
+        "retrieval.retrieval_strategy",
+        "retrieval.label_free_fallback_strategy",
     ]
 
 

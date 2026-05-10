@@ -43,6 +43,17 @@ def test_build_config_can_enable_llm_extraction() -> None:
     assert llm_config.output_contract_mode == "json_object"
 
 
+def test_build_config_can_override_retrieval_strategies() -> None:
+    config = build_config(
+        retrieval_strategy="label_gate_semantic_rank",
+        label_free_fallback_strategy="concept_overlap_semantic_rerank",
+    )
+
+    retrieval_config = config.labelrag_pipeline.retrieval
+    assert retrieval_config.retrieval_strategy == "label_gate_semantic_rank"
+    assert retrieval_config.label_free_fallback_strategy == "concept_overlap_semantic_rerank"
+
+
 def test_build_config_reads_labelgen_cache_dir_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

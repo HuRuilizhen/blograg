@@ -22,7 +22,9 @@ from rich.text import Text
 from blograg.client_registration import register_client
 from blograg.config import (
     ConceptExtractorMode,
+    LabelFreeFallbackStrategy,
     LLMProvider,
+    RetrievalStrategy,
     build_config,
     resolve_labelgen_cache_dir,
 )
@@ -130,6 +132,20 @@ _LLM_OUTPUT_CONTRACT_OPTION = typer.Option(
     None,
     help="Preferred structured-output contract mode for LLM extraction.",
 )
+_RETRIEVAL_STRATEGY_OPTION = typer.Option(
+    None,
+    help=(
+        "Advanced retrieval strategy override: "
+        "greedy_label_coverage_semantic_rerank or label_gate_semantic_rank."
+    ),
+)
+_LABEL_FREE_FALLBACK_STRATEGY_OPTION = typer.Option(
+    None,
+    help=(
+        "Advanced label-free fallback strategy override: concept_overlap_only, "
+        "concept_overlap_semantic_rerank, concept_gate_semantic_rank, or semantic_only."
+    ),
+)
 _API_KEY_VALUE_OPTION = typer.Option(
     None,
     "--api-key",
@@ -162,6 +178,10 @@ def build(
     llm_max_concepts_per_paragraph: int | None = _LLM_MAX_CONCEPTS_OPTION,
     llm_output_contract_mode: Literal["auto", "json_schema", "json_object", "prompt_only"]
     | None = _LLM_OUTPUT_CONTRACT_OPTION,
+    retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
+    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = (
+        _LABEL_FREE_FALLBACK_STRATEGY_OPTION
+    ),
 ) -> None:
     """Build a fresh local index from one blog directory."""
 
@@ -209,6 +229,18 @@ def build(
         if llm_output_contract_mode is not None
         else persisted_config.build.llm_output_contract_mode or "auto"
     )
+    resolved_retrieval_strategy = (
+        retrieval_strategy
+        if retrieval_strategy is not None
+        else (
+            persisted_config.retrieval.retrieval_strategy or "greedy_label_coverage_semantic_rerank"
+        )
+    )
+    resolved_label_free_fallback_strategy = (
+        label_free_fallback_strategy
+        if label_free_fallback_strategy is not None
+        else persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
+    )
     if resolved_concept_extractor == "llm" and not resolved_llm_model:
         typer.echo(
             "LLM extraction requires a configured model name. "
@@ -227,6 +259,8 @@ def build(
         llm_batch_size=resolved_llm_batch_size,
         llm_max_concepts_per_paragraph=resolved_llm_max_concepts,
         llm_output_contract_mode=resolved_llm_output_contract_mode,
+        retrieval_strategy=resolved_retrieval_strategy,
+        label_free_fallback_strategy=resolved_label_free_fallback_strategy,
     )
     started_at = time.monotonic()
     with _provider_secret_context(

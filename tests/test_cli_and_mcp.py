@@ -23,6 +23,7 @@ from blograg.user_config import (
     BuildDefaults,
     CLIConfig,
     ProviderSecrets,
+    RetrievalDefaults,
     ServeDefaults,
     save_provider_secrets,
 )
@@ -301,6 +302,10 @@ def test_build_command_uses_persisted_defaults_and_secret(
                 llm_provider="mistral",
                 llm_model="mistral-small",
             ),
+            retrieval=RetrievalDefaults(
+                retrieval_strategy="label_gate_semantic_rank",
+                label_free_fallback_strategy="concept_overlap_semantic_rerank",
+            ),
         )
     )
     save_provider_secrets(ProviderSecrets(mistral="secret-value"))
@@ -315,6 +320,11 @@ def test_build_command_uses_persisted_defaults_and_secret(
     assert captured["api_key"] == "secret-value"
     assert llm_config.provider == "mistral"
     assert llm_config.model == "mistral-small"
+    assert config.labelrag_pipeline.retrieval.retrieval_strategy == "label_gate_semantic_rank"
+    assert (
+        config.labelrag_pipeline.retrieval.label_free_fallback_strategy
+        == "concept_overlap_semantic_rerank"
+    )
 
 
 def test_serve_command_loads_index_and_runs_stdio_server(
@@ -598,7 +608,6 @@ def test_config_commands_persist_values_and_mask_secrets(
     assert "mistral" in show_result.stdout
     assert "configured" in show_result.stdout
     assert "secret-value" not in show_result.stdout
-
 
 def test_start_command_uses_managed_runtime_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -12,6 +12,16 @@ from labelrag import RAGPipelineConfig, RetrievalConfig
 ConceptExtractorMode = Literal["spacy", "heuristic", "llm"]
 LLMProvider = Literal["openai", "mistral", "qwen", "ollama", "deepseek"]
 PersistenceFormat = Literal["json", "json.gz"]
+RetrievalStrategy = Literal[
+    "greedy_label_coverage_semantic_rerank",
+    "label_gate_semantic_rank",
+]
+LabelFreeFallbackStrategy = Literal[
+    "concept_overlap_only",
+    "concept_overlap_semantic_rerank",
+    "concept_gate_semantic_rank",
+    "semantic_only",
+]
 LABELGEN_CACHE_DIR_ENV_VAR = "LABELGEN_CACHE_DIR"
 
 
@@ -20,6 +30,8 @@ class BlogRAGConfig:
     """Minimal configuration surface for the blograg MVP."""
 
     retrieval_default_top_k: int = 5
+    retrieval_strategy: RetrievalStrategy = "greedy_label_coverage_semantic_rerank"
+    label_free_fallback_strategy: LabelFreeFallbackStrategy = "semantic_only"
     labelrag_persistence_format: PersistenceFormat = "json.gz"
     labelrag_pipeline: RAGPipelineConfig = field(default_factory=lambda: _default_pipeline_config())
 
@@ -34,6 +46,7 @@ def _default_pipeline_config() -> RAGPipelineConfig:
         ),
         retrieval=RetrievalConfig(
             max_paragraphs=8,
+            retrieval_strategy="greedy_label_coverage_semantic_rerank",
             label_free_fallback_strategy="semantic_only",
         ),
     )
@@ -50,10 +63,18 @@ def build_config(
     llm_batch_size: int = 8,
     llm_max_concepts_per_paragraph: int = 12,
     llm_output_contract_mode: Literal["auto", "json_schema", "json_object", "prompt_only"] = "auto",
+    retrieval_strategy: RetrievalStrategy = "greedy_label_coverage_semantic_rerank",
+    label_free_fallback_strategy: LabelFreeFallbackStrategy = "semantic_only",
 ) -> BlogRAGConfig:
     """Build a blograg config from explicit CLI-facing options."""
 
-    config = BlogRAGConfig()
+    config = BlogRAGConfig(
+        retrieval_strategy=retrieval_strategy,
+        label_free_fallback_strategy=label_free_fallback_strategy,
+    )
+    retrieval_config = config.labelrag_pipeline.retrieval
+    retrieval_config.retrieval_strategy = retrieval_strategy
+    retrieval_config.label_free_fallback_strategy = label_free_fallback_strategy
     labelgen_config = config.labelrag_pipeline.labelgen
     labelgen_config.extractor_mode = concept_extractor
     labelgen_config.use_nlp_extractor = concept_extractor == "spacy"
