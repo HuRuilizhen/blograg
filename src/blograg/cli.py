@@ -376,9 +376,13 @@ def status(
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
     resolved_mcp_url = url or build_server_url(host=resolved_host, port=resolved_port)
-    resolved_health_url = derive_health_url(resolved_mcp_url) if url else build_health_url(
-        host=resolved_host,
-        port=resolved_port,
+    resolved_health_url = (
+        derive_health_url(resolved_mcp_url)
+        if url
+        else build_health_url(
+            host=resolved_host,
+            port=resolved_port,
+        )
     )
     observed_status = get_server_status(
         pid_file=resolved_pid_file,
