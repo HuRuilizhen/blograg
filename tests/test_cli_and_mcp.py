@@ -682,6 +682,101 @@ def test_status_command_reports_managed_runtime_state(
     assert "http_status=200" in result.stdout
 
 
+def test_doctor_command_reports_actionable_checks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    index_dir = tmp_path / "index"
+    save_user_cli_config(
+        CLIConfig(
+            default_index_dir=str(index_dir),
+            build=BuildDefaults(
+                concept_extractor="llm",
+                llm_provider="mistral",
+                llm_model="mistral-small",
+            ),
+            serve=ServeDefaults(host="127.0.0.1", port=8765),
+        )
+    )
+    save_provider_secrets(ProviderSecrets(mistral="secret-value"))
+    (index_dir / "blograg" / "labelrag").mkdir(parents=True)
+    (index_dir / "blograg" / "manifest.json").write_text("{}", encoding="utf-8")
+    (index_dir / "blograg" / "paragraphs.json").write_text("[]", encoding="utf-8")
+
+    def fake_get_server_status(
+        *, pid_file: Path, log_file: Path, mcp_url: str, health_url: str
+    ) -> ServerStatus:
+        del pid_file, log_file, mcp_url, health_url
+        return ServerStatus(
+            pid_file=tmp_path / "config-root" / "server.pid",
+            log_file=tmp_path / "config-root" / "server.log",
+            mcp_url="http://127.0.0.1:8765/mcp",
+            health_url="http://127.0.0.1:8765/healthz",
+            pid=12345,
+            process_running=True,
+            http_ready=True,
+            http_status_code=200,
+            detail="HTTP 200",
+        )
+
+    monkeypatch.setattr(blograg.cli, "get_server_status", fake_get_server_status)
+
+    def fake_which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(blograg.cli.shutil, "which", fake_which)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Doctor found no issues." in result.stdout
+    assert "OK   Index artifacts: Index looks complete." in result.stdout
+    assert "OK   codex executable: /usr/bin/codex" in result.stdout
+
+
+def test_doctor_command_fails_when_key_setup_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    save_user_cli_config(
+        CLIConfig(
+            build=BuildDefaults(
+                concept_extractor="llm",
+                llm_provider="mistral",
+            )
+        )
+    )
+
+    def fake_get_server_status(
+        *, pid_file: Path, log_file: Path, mcp_url: str, health_url: str
+    ) -> ServerStatus:
+        del pid_file, log_file, mcp_url, health_url
+        return ServerStatus(
+            pid_file=tmp_path / "config-root" / "server.pid",
+            log_file=tmp_path / "config-root" / "server.log",
+            mcp_url="http://127.0.0.1:8765/mcp",
+            health_url="http://127.0.0.1:8765/healthz",
+            pid=None,
+            process_running=False,
+            http_ready=False,
+            http_status_code=None,
+            detail="Connection refused",
+        )
+
+    monkeypatch.setattr(blograg.cli, "get_server_status", fake_get_server_status)
+
+    def fake_missing_which(_name: str) -> None:
+        return None
+
+    monkeypatch.setattr(blograg.cli.shutil, "which", fake_missing_which)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "WARN LLM model: Missing build.llm_model." in result.stdout
+    assert "Doctor found" in result.stderr
+
+
 def test_register_command_registers_both_clients(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

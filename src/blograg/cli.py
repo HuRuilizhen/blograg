@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import subprocess
 import sys
 from contextlib import nullcontext
@@ -386,6 +388,142 @@ def status(
 
 
 @app.command()
+def doctor() -> None:
+    """Check local configuration, index readiness, service state, and client tooling."""
+
+    persisted_config = load_cli_config()
+    provider_secrets = load_provider_secrets()
+    config_paths = get_config_paths()
+    issues: list[str] = []
+
+    typer.echo("Configuration")
+    typer.echo(
+        _doctor_line(
+            "Config file",
+            config_paths.config_path.is_file(),
+            str(config_paths.config_path),
+            issues,
+        )
+    )
+    typer.echo(
+        _doctor_line(
+            "Secrets file",
+            config_paths.secrets_path.is_file(),
+            str(config_paths.secrets_path),
+            issues,
+        )
+    )
+
+    typer.echo("")
+    typer.echo("Index")
+    default_index_dir = _coerce_path(persisted_config.default_index_dir)
+    if default_index_dir is None:
+        typer.echo(
+            _doctor_line(
+                "Default index",
+                False,
+                "No default_index_dir configured.",
+                issues,
+            )
+        )
+    else:
+        typer.echo(
+            _doctor_line(
+                "Default index",
+                True,
+                str(default_index_dir),
+                issues,
+            )
+        )
+        index_issues = _validate_index_directory(default_index_dir)
+        if index_issues:
+            for issue in index_issues:
+                typer.echo(_doctor_line("Index artifact", False, issue, issues))
+        else:
+            typer.echo(_doctor_line("Index artifacts", True, "Index looks complete.", issues))
+
+    typer.echo("")
+    typer.echo("Service")
+    resolved_host = persisted_config.serve.host or "127.0.0.1"
+    resolved_port = persisted_config.serve.port or 8765
+    status = get_server_status(
+        pid_file=config_paths.pid_path,
+        log_file=config_paths.log_path,
+        mcp_url=build_server_url(host=resolved_host, port=resolved_port),
+        health_url=build_health_url(host=resolved_host, port=resolved_port),
+    )
+    typer.echo(
+        _doctor_line(
+            "Managed process",
+            status.process_running,
+            f"PID {status.pid}" if status.pid is not None else "No PID file.",
+            issues,
+        )
+    )
+    typer.echo(
+        _doctor_line(
+            "HTTP health",
+            status.http_ready,
+            status.detail,
+            issues,
+        )
+    )
+
+    typer.echo("")
+    typer.echo("Clients")
+    for client in ("codex", "openclaw"):
+        executable = shutil.which(client)
+        typer.echo(
+            _doctor_line(
+                f"{client} executable",
+                executable is not None,
+                executable or "Not found on PATH.",
+                issues,
+            )
+        )
+
+    typer.echo("")
+    typer.echo("LLM")
+    extractor = persisted_config.build.concept_extractor or "heuristic"
+    typer.echo(_doctor_line("Extractor mode", True, extractor, issues))
+    if extractor == "llm":
+        model = persisted_config.build.llm_model
+        provider = persisted_config.build.llm_provider or "mistral"
+        env_var = persisted_config.build.llm_api_key_env_var or _default_api_key_env_var(provider)
+        secret_present = _provider_secret_present(provider_secrets, provider)
+        env_present = bool(env_var and os.environ.get(env_var))
+        typer.echo(_doctor_line("LLM provider", True, provider, issues))
+        typer.echo(
+            _doctor_line(
+                "LLM model",
+                model is not None,
+                model or "Missing build.llm_model.",
+                issues,
+            )
+        )
+        typer.echo(
+            _doctor_line(
+                "LLM credential",
+                secret_present or env_present,
+                (
+                    f"Secret configured for {provider}."
+                    if secret_present
+                    else f"Environment variable {env_var} is set."
+                    if env_present
+                    else f"Missing secret or environment variable {env_var}."
+                ),
+                issues,
+            )
+        )
+
+    typer.echo("")
+    if issues:
+        typer.echo(f"Doctor found {len(issues)} issue(s).", err=True)
+        raise typer.Exit(code=1)
+    typer.echo("Doctor found no issues.")
+
+
+@app.command()
 def register(
     client: Literal["codex", "openclaw", "both"] = _REGISTER_CLIENT_OPTION,
     server_name: str = typer.Option("blograg", help="MCP server name to register."),
@@ -696,6 +834,43 @@ def _blank_to_none(value: str) -> str | None:
     if not stripped:
         return None
     return stripped
+
+
+def _validate_index_directory(index_dir: Path) -> list[str]:
+    required_paths = [
+        index_dir / "blograg" / "manifest.json",
+        index_dir / "blograg" / "paragraphs.json",
+        index_dir / "blograg" / "labelrag",
+    ]
+    issues: list[str] = []
+    for path in required_paths:
+        if path.name == "labelrag":
+            if not path.is_dir():
+                issues.append(f"Missing artifact directory: {path}")
+        elif not path.is_file():
+            issues.append(f"Missing artifact file: {path}")
+    return issues
+
+
+def _doctor_line(label: str, ok: bool, detail: str, issues: list[str]) -> str:
+    if not ok:
+        issues.append(f"{label}: {detail}")
+    state = "OK" if ok else "WARN"
+    return f"{state:<4} {label}: {detail}"
+
+
+def _provider_secret_present(secrets: ProviderSecrets, provider: LLMProvider) -> bool:
+    return getattr(secrets, provider) is not None
+
+
+def _default_api_key_env_var(provider: LLMProvider) -> str:
+    return {
+        "openai": "OPENAI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "qwen": "DASHSCOPE_API_KEY",
+        "ollama": "OLLAMA_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+    }[provider]
 
 
 class _BuildProgressDisplay:
