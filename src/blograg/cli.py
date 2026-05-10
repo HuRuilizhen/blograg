@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from contextlib import nullcontext
@@ -259,6 +260,8 @@ def serve(
     cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
     if cache_dir is not None:
         index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
+    if resolved_transport == "streamable-http":
+        _quiet_streamable_http_manager_logs()
     server = create_mcp_server(index, host=resolved_host, port=resolved_port)
     labelgen_config = index.pipeline.config.labelgen
     llm_config = labelgen_config.extraction.llm
@@ -710,3 +713,11 @@ class _BuildProgressDisplay:
         if self._active and sys.stderr.isatty():
             print(file=sys.stderr, flush=True)
         self._active = False
+
+
+def _quiet_streamable_http_manager_logs() -> None:
+    """Suppress noisy MCP transport lifecycle info logs while keeping uvicorn output intact."""
+
+    logging.getLogger("mcp.server.streamable_http_manager").setLevel(
+        max(logging.WARNING, logging.getLogger().level)
+    )
