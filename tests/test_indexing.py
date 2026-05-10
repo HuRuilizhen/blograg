@@ -98,6 +98,7 @@ def test_load_index_retrieves_structured_paragraph_results(tmp_path: Path) -> No
     assert results[0].section_heading == "Front Matter"
     assert results[0].trace.retrieval_strategy
     assert isinstance(results[0].trace.score, float)
+    assert results[0].trace.score_kind
 
 
 def test_load_index_fails_clearly_when_manifest_is_missing(tmp_path: Path) -> None:
@@ -250,6 +251,7 @@ def test_retrieve_paragraphs_serializes_pipeline_limit_override() -> None:
                         paragraph_id="post::p001",
                         text="Paragraph body",
                         retrieval_score=1.0,
+                        retrieval_score_kind="semantic_similarity",
                     )
                 ],
             )

@@ -99,6 +99,7 @@ class BlogRAGIndex:
                 text=item.text,
                 retrieval_strategy=retrieval_strategy,
                 score=item.retrieval_score,
+                score_kind=str(getattr(item, "retrieval_score_kind", "")),
             )
             for item in retrieval_result.retrieved_paragraphs
             if item.paragraph_id in self.paragraph_records
@@ -391,6 +392,7 @@ def _retrieval_result_item_to_paragraph_result(
     text: str,
     retrieval_strategy: str,
     score: float,
+    score_kind: str,
 ) -> ParagraphResult:
     """Map one labelrag retrieval item into the blograg MCP-facing contract."""
 
@@ -404,6 +406,7 @@ def _retrieval_result_item_to_paragraph_result(
         trace=RetrievalTrace(
             retrieval_strategy=retrieval_strategy,
             score=score,
+            score_kind=score_kind,
         ),
     )
 

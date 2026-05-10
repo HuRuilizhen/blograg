@@ -69,6 +69,7 @@ def test_create_mcp_server_exposes_retrieve_paragraphs_tool(tmp_path: Path) -> N
     assert [tool.name for tool in tools] == ["retrieve_paragraphs"]
     assert payload[0]["paragraph_id"] == "jekyll::p001"
     assert payload[0]["trace"]["retrieval_strategy"]
+    assert payload[0]["trace"]["score_kind"]
 
 
 def test_create_mcp_server_exposes_browser_status_routes(tmp_path: Path) -> None:

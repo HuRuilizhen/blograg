@@ -34,6 +34,7 @@ class RetrievalTrace:
 
     retrieval_strategy: str
     score: float
+    score_kind: str
 
 
 @dataclass(slots=True, frozen=True)
