@@ -609,6 +609,27 @@ def test_config_commands_persist_values_and_mask_secrets(
     assert "configured" in show_result.stdout
     assert "secret-value" not in show_result.stdout
 
+
+def test_config_show_all_includes_unset_and_default_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+
+    result = runner.invoke(app, ["config", "show", "--all"])
+
+    assert result.exit_code == 0
+    assert "default_blog_dir" in result.stdout
+    assert "unset" in result.stdout
+    assert "serve.host" in result.stdout
+    assert "default: 127.0.0.1" in result.stdout
+    assert "build.labelgen_cache_dir" in result.stdout
+    assert "default: upstream default" in result.stdout
+    assert ".labelgen-cache" in result.stdout
+    assert "retrieval.retrieval_strategy" in result.stdout
+    assert "default:" in result.stdout
+    assert "greedy_label_coverage_semantic_reran" in result.stdout
+
+
 def test_start_command_uses_managed_runtime_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -291,6 +291,39 @@ def config_value_map(config: CLIConfig) -> dict[str, str]:
     return values
 
 
+def config_value_map_all(config: CLIConfig) -> dict[str, str]:
+    """Return all known config values, including unset entries and runtime defaults."""
+
+    return {
+        "default_blog_dir": config.default_blog_dir or "unset",
+        "default_index_dir": config.default_index_dir or "unset",
+        "build.concept_extractor": config.build.concept_extractor or "default: heuristic",
+        "build.llm_provider": config.build.llm_provider or "default: mistral",
+        "build.llm_model": config.build.llm_model or "unset",
+        "build.llm_base_url": config.build.llm_base_url or "unset",
+        "build.llm_api_key_env_var": config.build.llm_api_key_env_var or "unset",
+        "build.llm_batch_size": str(config.build.llm_batch_size or "default: 8"),
+        "build.llm_max_concepts_per_paragraph": str(
+            config.build.llm_max_concepts_per_paragraph or "default: 12"
+        ),
+        "build.llm_output_contract_mode": (
+            config.build.llm_output_contract_mode or "default: auto"
+        ),
+        "build.labelgen_cache_dir": (
+            config.build.labelgen_cache_dir or "default: upstream default (.labelgen-cache)"
+        ),
+        "serve.host": config.serve.host or "default: 127.0.0.1",
+        "serve.port": str(config.serve.port or "default: 8765"),
+        "serve.transport": config.serve.transport or "default: streamable-http",
+        "retrieval.retrieval_strategy": (
+            config.retrieval.retrieval_strategy or "default: greedy_label_coverage_semantic_rerank"
+        ),
+        "retrieval.label_free_fallback_strategy": (
+            config.retrieval.label_free_fallback_strategy or "default: semantic_only"
+        ),
+    }
+
+
 def secret_status_map(secrets: ProviderSecrets) -> dict[str, bool]:
     """Return masked secret presence state for display."""
 

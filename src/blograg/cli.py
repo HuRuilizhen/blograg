@@ -45,6 +45,7 @@ from blograg.user_config import (
     ProviderSecrets,
     apply_provider_secret,
     config_value_map,
+    config_value_map_all,
     get_config_paths,
     known_secret_providers,
     load_cli_config,
@@ -602,7 +603,13 @@ def config_path() -> None:
 
 
 @config_app.command("show")
-def config_show() -> None:
+def config_show(
+    show_all: bool = typer.Option(
+        False,
+        "--all",
+        help="Show all known config keys, including unset values and runtime defaults.",
+    ),
+) -> None:
     """Show persisted config values and masked secret state."""
 
     paths = get_config_paths()
@@ -617,7 +624,7 @@ def config_show() -> None:
         ],
     )
 
-    values = config_value_map(config)
+    values = config_value_map_all(config) if show_all else config_value_map(config)
     if values:
         _print_key_value_table("Config", list(values.items()))
 
