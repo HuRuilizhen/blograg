@@ -140,6 +140,7 @@ def test_build_command_reports_written_index(
         built_with["config"] = config
         return _FakeIndex(paragraph_records={"p1": object(), "p2": object()})
 
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
     monkeypatch.setattr(blograg.cli, "build_index", fake_build_index)
     (tmp_path / "blog").mkdir()
 
@@ -604,12 +605,13 @@ def test_start_command_uses_managed_runtime_paths(
         return ServerStatus(
             pid_file=cast(Path, kwargs["pid_file"]),
             log_file=cast(Path, kwargs["log_file"]),
-            url="http://127.0.0.1:8765/mcp",
+            mcp_url="http://127.0.0.1:8765/mcp",
+            health_url="http://127.0.0.1:8765/healthz",
             pid=12345,
             process_running=True,
             http_ready=True,
-            http_status_code=405,
-            detail="HTTP 405",
+            http_status_code=200,
+            detail="HTTP 200",
         )
 
     monkeypatch.setattr(blograg.cli, "start_server", fake_start_server)
@@ -621,6 +623,7 @@ def test_start_command_uses_managed_runtime_paths(
     assert captured["pid_file"] == tmp_path / "config-root" / "server.pid"
     assert captured["log_file"] == tmp_path / "config-root" / "server.log"
     assert "Started blograg server (PID 12345)." in result.stdout
+    assert "URL: http://127.0.0.1:8765/mcp" in result.stdout
 
 
 def test_stop_command_uses_managed_runtime_paths(
@@ -648,19 +651,23 @@ def test_status_command_reports_managed_runtime_state(
     monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
     save_user_cli_config(CLIConfig(serve=ServeDefaults(host="0.0.0.0", port=8877)))
 
-    def fake_get_server_status(*, pid_file: Path, log_file: Path, url: str) -> ServerStatus:
+    def fake_get_server_status(
+        *, pid_file: Path, log_file: Path, mcp_url: str, health_url: str
+    ) -> ServerStatus:
         assert pid_file == tmp_path / "config-root" / "server.pid"
         assert log_file == tmp_path / "config-root" / "server.log"
-        assert url == "http://0.0.0.0:8877/mcp"
+        assert mcp_url == "http://0.0.0.0:8877/mcp"
+        assert health_url == "http://0.0.0.0:8877/healthz"
         return ServerStatus(
             pid_file=pid_file,
             log_file=log_file,
-            url=url,
+            mcp_url=mcp_url,
+            health_url=health_url,
             pid=12345,
             process_running=True,
             http_ready=True,
-            http_status_code=405,
-            detail="HTTP 405",
+            http_status_code=200,
+            detail="HTTP 200",
         )
 
     monkeypatch.setattr(blograg.cli, "get_server_status", fake_get_server_status)
@@ -668,9 +675,11 @@ def test_status_command_reports_managed_runtime_state(
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
+    assert "mcp_url=http://0.0.0.0:8877/mcp" in result.stdout
+    assert "health_url=http://0.0.0.0:8877/healthz" in result.stdout
     assert "process_running=yes" in result.stdout
     assert "http_ready=yes" in result.stdout
-    assert "http_status=405" in result.stdout
+    assert "http_status=200" in result.stdout
 
 
 def test_register_command_registers_both_clients(

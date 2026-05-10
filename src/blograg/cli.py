@@ -20,7 +20,14 @@ from blograg.config import (
 )
 from blograg.indexing import BuildProgressUpdate, build_index, load_index
 from blograg.mcp import create_mcp_server
-from blograg.service_manager import build_server_url, get_server_status, start_server, stop_server
+from blograg.service_manager import (
+    build_health_url,
+    build_server_url,
+    derive_health_url,
+    get_server_status,
+    start_server,
+    stop_server,
+)
 from blograg.user_config import (
     ProviderSecrets,
     apply_provider_secret,
@@ -224,10 +231,10 @@ def build(
             )
         finally:
             progress_display.finish()
-        typer.echo(
-            f"Built blograg index with {len(index.paragraph_records)} paragraphs at "
-            f"{(resolved_index_dir / 'blograg').resolve()}"
-        )
+    typer.echo(
+        f"Built blograg index with {len(index.paragraph_records)} paragraphs at "
+        f"{(resolved_index_dir / 'blograg').resolve()}"
+    )
 
 
 @app.command()
@@ -324,7 +331,7 @@ def start(
     typer.echo(f"Started blograg server (PID {status.pid}).")
     typer.echo(f"PID file: {status.pid_file}")
     typer.echo(f"Log file: {status.log_file}")
-    typer.echo(f"URL: {status.url}")
+    typer.echo(f"URL: {status.mcp_url}")
 
 
 @app.command()
@@ -355,16 +362,21 @@ def status(
     resolved_log_file = log_file or config_paths.log_path
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
-    resolved_url = url or build_server_url(host=resolved_host, port=resolved_port)
+    resolved_mcp_url = url or build_server_url(host=resolved_host, port=resolved_port)
+    resolved_health_url = derive_health_url(resolved_mcp_url) if url else build_health_url(
+        host=resolved_host,
+        port=resolved_port,
+    )
     observed_status = get_server_status(
         pid_file=resolved_pid_file,
         log_file=resolved_log_file,
-        url=resolved_url,
+        mcp_url=resolved_mcp_url,
+        health_url=resolved_health_url,
     )
-
     typer.echo(f"pid_file={observed_status.pid_file}")
     typer.echo(f"log_file={observed_status.log_file}")
-    typer.echo(f"url={observed_status.url}")
+    typer.echo(f"mcp_url={observed_status.mcp_url}")
+    typer.echo(f"health_url={observed_status.health_url}")
     typer.echo(f"pid={observed_status.pid if observed_status.pid is not None else 'missing'}")
     typer.echo(f"process_running={'yes' if observed_status.process_running else 'no'}")
     typer.echo(f"http_ready={'yes' if observed_status.http_ready else 'no'}")

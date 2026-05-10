@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from urllib.error import HTTPError, URLError
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 TransportMode = Literal["streamable-http", "stdio"]
@@ -22,7 +23,8 @@ class ServerStatus:
 
     pid_file: Path
     log_file: Path
-    url: str
+    mcp_url: str
+    health_url: str
     pid: int | None
     process_running: bool
     http_ready: bool
@@ -34,6 +36,35 @@ def build_server_url(*, host: str, port: int) -> str:
     """Return the canonical MCP HTTP URL for one server binding."""
 
     return f"http://{host}:{port}/mcp"
+
+
+def build_health_url(*, host: str, port: int) -> str:
+    """Return the canonical HTTP healthcheck URL for one server binding."""
+
+    return f"http://{host}:{port}/healthz"
+
+
+def build_browser_url(*, host: str, port: int) -> str:
+    """Return the browser-friendly root URL for one server binding."""
+
+    return f"http://{host}:{port}/"
+
+
+def derive_health_url(mcp_url: str) -> str:
+    """Derive a healthcheck URL from a canonical MCP URL."""
+
+    split = urlsplit(mcp_url)
+    if not split.scheme or not split.netloc:
+        raise ValueError(f"Unsupported MCP URL: {mcp_url}")
+    return urlunsplit(
+        SplitResult(
+            scheme=split.scheme,
+            netloc=split.netloc,
+            path="/healthz",
+            query="",
+            fragment="",
+        )
+    )
 
 
 def read_pid(pid_file: Path) -> int | None:
@@ -131,7 +162,8 @@ def start_server(
             )
     pid_file.write_text(f"{process.pid}\n", encoding="utf-8")
 
-    url = build_server_url(host=host, port=port)
+    mcp_url = build_server_url(host=host, port=port)
+    health_url = build_health_url(host=host, port=port)
     deadline = time.monotonic() + ready_timeout_seconds
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -140,14 +172,24 @@ def start_server(
                 "blograg server exited before becoming ready."
                 + (f" Last log output:\n{detail}" if detail else "")
             )
-        status = get_server_status(pid_file=pid_file, log_file=log_file, url=url)
+        status = get_server_status(
+            pid_file=pid_file,
+            log_file=log_file,
+            mcp_url=mcp_url,
+            health_url=health_url,
+        )
         if status.http_ready:
             return status
         time.sleep(0.2)
 
-    status = get_server_status(pid_file=pid_file, log_file=log_file, url=url)
+    status = get_server_status(
+        pid_file=pid_file,
+        log_file=log_file,
+        mcp_url=mcp_url,
+        health_url=health_url,
+    )
     raise RuntimeError(
-        f"blograg server did not become ready in time for {url}."
+        f"blograg server did not become ready in time for {health_url}."
         + (f" Last log output:\n{_tail_log(log_file)}" if log_file.is_file() else "")
     )
 
@@ -178,16 +220,23 @@ def stop_server(*, pid_file: Path) -> str:
     return f"Stopped blograg server (PID {pid}) after force kill."
 
 
-def get_server_status(*, pid_file: Path, log_file: Path, url: str) -> ServerStatus:
+def get_server_status(
+    *,
+    pid_file: Path,
+    log_file: Path,
+    mcp_url: str,
+    health_url: str,
+) -> ServerStatus:
     """Inspect one managed server from its PID file and expected URL."""
 
     pid = read_pid(pid_file)
     process_running = pid is not None and is_process_running(pid)
-    http_ready, http_status_code, detail = probe_server(url)
+    http_ready, http_status_code, detail = probe_server(health_url)
     return ServerStatus(
         pid_file=pid_file,
         log_file=log_file,
-        url=url,
+        mcp_url=mcp_url,
+        health_url=health_url,
         pid=pid,
         process_running=process_running,
         http_ready=http_ready,
@@ -197,7 +246,7 @@ def get_server_status(*, pid_file: Path, log_file: Path, url: str) -> ServerStat
 
 
 def probe_server(url: str) -> tuple[bool, int | None, str]:
-    """Probe the MCP HTTP endpoint and report whether it looks ready."""
+    """Probe one HTTP endpoint and report whether it is healthy."""
 
     request = Request(url, method="GET")
     try:
@@ -205,8 +254,6 @@ def probe_server(url: str) -> tuple[bool, int | None, str]:
             status_code = response.getcode()
             return status_code == 200, status_code, f"HTTP {status_code}"
     except HTTPError as error:
-        if error.code in {400, 405}:
-            return True, error.code, f"HTTP {error.code}"
         return False, error.code, f"HTTP {error.code}"
     except URLError as error:
         return False, None, str(error.reason)
