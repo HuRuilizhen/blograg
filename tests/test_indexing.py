@@ -138,6 +138,7 @@ def test_build_index_rebuilds_cleanly_over_existing_blograg_directory(tmp_path: 
 
     assert stale_artifact.exists() is False
     assert sorted(rebuilt_index.paragraph_records) == ["my-post::p001", "my-post::p002"]
+    assert rebuilt_index.index_dir == index_dir.resolve()
 
 
 def test_load_index_fails_clearly_when_paragraph_metadata_is_missing(tmp_path: Path) -> None:
@@ -267,6 +268,7 @@ def test_retrieve_paragraphs_serializes_pipeline_limit_override() -> None:
             )
         },
         config=build_config(),
+        index_dir=Path("/tmp/blograg-index"),
     )
 
     def run_retrieval(top_k: int) -> None:

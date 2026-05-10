@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import anyio
 import pytest
+from starlette.testclient import TestClient
 from typer.testing import CliRunner
 
 import blograg.cli
@@ -67,6 +68,54 @@ def test_create_mcp_server_exposes_retrieve_paragraphs_tool(tmp_path: Path) -> N
     assert [tool.name for tool in tools] == ["retrieve_paragraphs"]
     assert payload[0]["paragraph_id"] == "jekyll::p001"
     assert payload[0]["trace"]["retrieval_strategy"]
+
+
+def test_create_mcp_server_exposes_browser_status_routes(tmp_path: Path) -> None:
+    blog_dir = _write_blog(
+        tmp_path,
+        {
+            "_posts/2026-04-14-jekyll.md": (
+                "---\n"
+                "title: Jekyll Notes\n"
+                "---\n"
+                "\n"
+                "## Front Matter\n"
+                "Jekyll front matter is stored at the top of the post.\n"
+            )
+        },
+    )
+    index = build_index(
+        blog_dir=blog_dir,
+        index_dir=tmp_path / "index",
+        config=BlogRAGConfig(),
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    server = create_mcp_server(index, host="127.0.0.1", port=8765)
+
+    with TestClient(server.streamable_http_app()) as client:
+        root_response = client.get("/")
+        health_response = client.get("/healthz")
+
+    assert root_response.status_code == 200
+    assert "<title>blograg</title>" in root_response.text
+    assert "blograg MCP server" in root_response.text
+    assert "http://127.0.0.1:8765/mcp" in root_response.text
+    assert str(index.index_dir) in root_response.text
+    assert "Health endpoint" in root_response.text
+    assert "retrieve_paragraphs" in root_response.text
+    assert "query: string" in root_response.text
+    assert "top_k: integer" in root_response.text
+    assert "Quick actions" not in root_response.text
+
+    assert health_response.status_code == 200
+    assert health_response.json() == {
+        "status": "ok",
+        "service": "blograg",
+        "mcp_url": "http://127.0.0.1:8765/mcp",
+        "index_dir": str(index.index_dir),
+        "paragraph_count": 1,
+        "tools": ["retrieve_paragraphs"],
+    }
 
 
 def test_build_command_reports_written_index(
@@ -296,6 +345,7 @@ def test_serve_command_loads_index_and_runs_stdio_server(
 
     monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
     monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
     (tmp_path / "index").mkdir()
 
     result = runner.invoke(

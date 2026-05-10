@@ -71,6 +71,7 @@ class BlogRAGIndex:
     pipeline: RAGPipeline
     paragraph_records: dict[str, ParagraphRecord]
     config: BlogRAGConfig
+    index_dir: Path
     _retrieve_lock: Lock = field(init=False, repr=False, default_factory=Lock)
 
     def retrieve_paragraphs(self, query: str, top_k: int | None = None) -> list[ParagraphResult]:
@@ -175,6 +176,7 @@ def build_index(
         pipeline=pipeline,
         paragraph_records={record.paragraph_id: record for record in paragraph_records},
         config=effective_config,
+        index_dir=layout.root_dir,
     )
 
 
@@ -209,6 +211,7 @@ def load_index(
         pipeline=pipeline,
         paragraph_records={record.paragraph_id: record for record in paragraph_records},
         config=effective_config,
+        index_dir=layout.root_dir,
     )
 
 

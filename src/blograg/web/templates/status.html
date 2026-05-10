@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>blograg</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fafafa;
+        --panel: #ffffff;
+        --text: #20262d;
+        --muted: #5c6670;
+        --border: #e3e7eb;
+        --ok: #2f6f44;
+      }
+      body {
+        margin: 0;
+        font-family: "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 760px;
+        margin: 32px auto;
+        padding: 0 18px;
+      }
+      .panel {
+        padding: 0;
+      }
+      .header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.45rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      dl {
+        margin: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 14px;
+      }
+      th,
+      td {
+        padding: 6px 12px;
+        text-align: left;
+        vertical-align: top;
+        border: 1px solid var(--border);
+      }
+      th {
+        width: 180px;
+        font-weight: 600;
+        background: #f6f8fa;
+      }
+      td {
+        color: var(--muted);
+      }
+      .section {
+        margin-top: 22px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      .section h2 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      .ok {
+        color: var(--ok);
+        font-weight: 600;
+        font-size: 0.92rem;
+      }
+      .dim {
+        color: var(--muted);
+      }
+      .tool-list {
+        margin: 14px 0 0;
+      }
+      .tool {
+        padding: 10px 0 0;
+      }
+      .tool h3 {
+        margin: 0 0 4px;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      .tool p {
+        margin: 4px 0;
+      }
+      .param-list {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+      .param-list li {
+        margin: 4px 0;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <div class="header">
+          <h1>blograg MCP server</h1>
+          <div class="ok">Healthy</div>
+        </div>
+        <p>Local MCP endpoint for a blog paragraph index.</p>
+
+        <div class="section">
+          <h2>Status</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th>Bind address</th>
+                <td>${bind_address}</td>
+              </tr>
+              <tr>
+                <th>Canonical MCP endpoint</th>
+                <td>${mcp_url}</td>
+              </tr>
+              <tr>
+                <th>Local endpoint</th>
+                <td>${local_endpoint}</td>
+              </tr>
+              <tr>
+                <th>LAN endpoint</th>
+                <td class="${lan_visibility}">${lan_endpoint}</td>
+              </tr>
+              <tr>
+                <th>Health endpoint</th>
+                <td>${health_url}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Index</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th>Index directory</th>
+                <td>${index_dir}</td>
+              </tr>
+              <tr>
+                <th>Paragraphs loaded</th>
+                <td>${paragraph_count}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Tools</h2>
+          <div class="tool-list">
+            <div class="tool">
+              <h3>retrieve_paragraphs</h3>
+              <p>Returns relevant blog paragraphs with post metadata and retrieval trace.</p>
+              <ul class="param-list">
+                <li>query: string, required.</li>
+                <li>top_k: integer, optional, default 5.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
