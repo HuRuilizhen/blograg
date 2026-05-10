@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import deque
+from collections.abc import Generator
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, cast
@@ -157,6 +159,12 @@ _FORCE_RESTART_OPTION = typer.Option(
     False,
     "--force-restart",
     help="Stop an existing managed server before starting a new one.",
+)
+_LOG_TAIL_OPTION = typer.Option(
+    50,
+    "--tail",
+    min=1,
+    help="Number of recent log lines to print before exiting or following.",
 )
 _REGISTER_CLIENT_OPTION = typer.Option(
     ...,
@@ -447,6 +455,39 @@ def status(
         rows.append(("HTTP code", str(observed_status.http_status_code)))
     rows.append(("Detail", observed_status.detail))
     _print_key_value_table("Status", rows)
+
+
+@app.command()
+def logs(
+    tail: int = _LOG_TAIL_OPTION,
+    follow: bool = typer.Option(
+        False,
+        "--follow",
+        help="Continue streaming appended log output after printing the tail.",
+    ),
+) -> None:
+    """Show the managed background server log."""
+
+    log_path = get_config_paths().log_path
+    if not log_path.is_file():
+        typer.echo(
+            f"No managed server log file found at {log_path}. "
+            "Start the server with `blograg start` first.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    for line in _read_log_tail(log_path, line_count=tail):
+        _console.print(line)
+
+    if not follow:
+        return
+
+    try:
+        for line in _follow_log(log_path):
+            _console.print(line)
+    except KeyboardInterrupt:
+        raise typer.Exit(code=0) from None
 
 
 @app.command()
@@ -1127,3 +1168,19 @@ def _quiet_streamable_http_manager_logs() -> None:
     logging.getLogger("mcp.server.streamable_http_manager").setLevel(
         max(logging.WARNING, logging.getLogger().level)
     )
+
+
+def _read_log_tail(path: Path, *, line_count: int) -> list[str]:
+    with path.open(encoding="utf-8") as handle:
+        return list(deque((line.rstrip("\n") for line in handle), maxlen=line_count))
+
+
+def _follow_log(path: Path) -> Generator[str, None, None]:
+    with path.open(encoding="utf-8") as handle:
+        handle.seek(0, os.SEEK_END)
+        while True:
+            line = handle.readline()
+            if line:
+                yield line.rstrip("\n")
+                continue
+            time.sleep(0.2)

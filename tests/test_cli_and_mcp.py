@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -725,6 +726,59 @@ def test_status_command_reports_managed_runtime_state(
     assert "ready" in result.stdout
     assert "HTTP code" in result.stdout
     assert "200" in result.stdout
+
+
+def test_logs_reads_recent_lines_from_managed_log_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_root = tmp_path / "config-root"
+    log_path = config_root / "server.log"
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(config_root))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["logs", "--tail", "2"])
+
+    assert result.exit_code == 0
+    assert "two" in result.stdout
+    assert "three" in result.stdout
+    assert "one" not in result.stdout
+
+
+def test_logs_follow_streams_appended_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_root = tmp_path / "config-root"
+    log_path = config_root / "server.log"
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(config_root))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    def fake_follow_log(path: Path) -> Generator[str, None, None]:
+        assert path == log_path
+        yield "four"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(blograg.cli, "_follow_log", fake_follow_log)
+
+    result = runner.invoke(app, ["logs", "--tail", "1", "--follow"])
+
+    assert result.exit_code == 0
+    assert "three" in result.stdout
+    assert "four" in result.stdout
+
+
+def test_logs_fails_clearly_when_log_file_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_root = tmp_path / "config-root"
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(config_root))
+
+    result = runner.invoke(app, ["logs"])
+
+    assert result.exit_code == 1
+    assert "No managed server log file found" in result.stderr
+    assert "blograg start" in result.stderr
 
 
 def test_doctor_command_reports_actionable_checks(
