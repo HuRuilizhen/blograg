@@ -38,6 +38,8 @@ from blograg.service_manager import (
     stop_server,
 )
 from blograg.user_config import (
+    CLIConfig,
+    ConfigPaths,
     ProviderSecrets,
     apply_provider_secret,
     config_value_map,
@@ -654,19 +656,27 @@ def config_wizard() -> None:
 
     config = load_cli_config()
     secrets = load_provider_secrets()
-    config.default_blog_dir = _blank_to_none(
-        typer.prompt(
-            "Default blog directory",
-            default=config.default_blog_dir or "",
-            show_default=bool(config.default_blog_dir),
-        )
+    paths = get_config_paths()
+    _print_wizard_intro(paths)
+
+    _print_wizard_step(
+        "Step 1",
+        "Paths",
+        "Set the default blog source and index output directories.",
     )
-    config.default_index_dir = _blank_to_none(
-        typer.prompt(
-            "Default index directory",
-            default=config.default_index_dir or "",
-            show_default=bool(config.default_index_dir),
-        )
+    config.default_blog_dir = _prompt_optional_text(
+        "Default blog directory",
+        config.default_blog_dir,
+    )
+    config.default_index_dir = _prompt_optional_text(
+        "Default index directory",
+        config.default_index_dir,
+    )
+
+    _print_wizard_step(
+        "Step 2",
+        "Server",
+        "Choose how the local MCP server should listen by default.",
     )
     config.serve.host = _blank_to_none(
         typer.prompt(
@@ -682,53 +692,56 @@ def config_wizard() -> None:
     )
     config.serve.transport = cast(
         Literal["streamable-http", "stdio"],
-        typer.prompt(
+        _prompt_choice(
             "Default MCP transport",
-            default=config.serve.transport or "streamable-http",
+            ["streamable-http", "stdio"],
+            config.serve.transport or "streamable-http",
         ),
+    )
+
+    _print_wizard_step(
+        "Step 3",
+        "Build defaults",
+        "Choose how blograg should build new indexes by default.",
     )
     config.build.concept_extractor = cast(
         ConceptExtractorMode,
-        typer.prompt(
+        _prompt_choice(
             "Default concept extractor",
-            default=config.build.concept_extractor or "heuristic",
+            ["heuristic", "spacy", "llm"],
+            config.build.concept_extractor or "heuristic",
         ),
     )
-    config.build.labelgen_cache_dir = _blank_to_none(
-        typer.prompt(
-            "Default labelgen cache directory",
-            default=config.build.labelgen_cache_dir or "",
-            show_default=bool(config.build.labelgen_cache_dir),
-        )
+    config.build.labelgen_cache_dir = _prompt_optional_text(
+        "Default labelgen cache directory",
+        config.build.labelgen_cache_dir,
     )
+
     if config.build.concept_extractor == "llm":
+        _print_wizard_step(
+            "Step 4",
+            "LLM",
+            "Configure provider defaults and an optional local API key.",
+        )
         config.build.llm_provider = cast(
             LLMProvider,
-            typer.prompt(
+            _prompt_choice(
                 "Default LLM provider",
-                default=config.build.llm_provider or "mistral",
+                ["mistral", "openai", "qwen", "deepseek", "ollama"],
+                config.build.llm_provider or "mistral",
             ),
         )
-        config.build.llm_model = _blank_to_none(
-            typer.prompt(
-                "Default LLM model",
-                default=config.build.llm_model or "",
-                show_default=bool(config.build.llm_model),
-            )
+        config.build.llm_model = _prompt_optional_text(
+            "Default LLM model",
+            config.build.llm_model,
         )
-        config.build.llm_base_url = _blank_to_none(
-            typer.prompt(
-                "Default LLM base URL",
-                default=config.build.llm_base_url or "",
-                show_default=bool(config.build.llm_base_url),
-            )
+        config.build.llm_base_url = _prompt_optional_text(
+            "Default LLM base URL",
+            config.build.llm_base_url,
         )
-        config.build.llm_api_key_env_var = _blank_to_none(
-            typer.prompt(
-                "LLM API key env var name",
-                default=config.build.llm_api_key_env_var or "",
-                show_default=bool(config.build.llm_api_key_env_var),
-            )
+        config.build.llm_api_key_env_var = _prompt_optional_text(
+            "LLM API key env var name",
+            config.build.llm_api_key_env_var,
         )
         config.build.llm_batch_size = int(
             typer.prompt(
@@ -744,9 +757,10 @@ def config_wizard() -> None:
         )
         config.build.llm_output_contract_mode = cast(
             Literal["auto", "json_schema", "json_object", "prompt_only"],
-            typer.prompt(
+            _prompt_choice(
                 "Default LLM output contract mode",
-                default=config.build.llm_output_contract_mode or "auto",
+                ["auto", "json_schema", "json_object", "prompt_only"],
+                config.build.llm_output_contract_mode or "auto",
             ),
         )
         provider = cast(str, config.build.llm_provider)
@@ -760,6 +774,12 @@ def config_wizard() -> None:
         )
         if provider_api_key is not None:
             set_secret_value(secrets, _parse_secret_provider(provider), provider_api_key)
+
+    _print_wizard_summary(config, secrets)
+    should_save = typer.confirm("Write these settings to disk?", default=True)
+    if not should_save:
+        typer.echo("Aborted without writing config files.")
+        raise typer.Exit(code=1)
 
     save_cli_config(config)
     save_provider_secrets(secrets)
@@ -848,6 +868,117 @@ def _blank_to_none(value: str) -> str | None:
     if not stripped:
         return None
     return stripped
+
+
+def _prompt_optional_text(label: str, current_value: str | None) -> str | None:
+    return _blank_to_none(
+        typer.prompt(
+            label,
+            default=current_value or "",
+            show_default=bool(current_value),
+        )
+    )
+
+
+def _prompt_choice(label: str, options: list[str], default_value: str) -> str:
+    choice_table = Table(box=None, show_header=False, pad_edge=False, show_edge=False)
+    choice_table.add_column(no_wrap=True, style="bold cyan", min_width=3)
+    choice_table.add_column()
+    for index, option in enumerate(options, start=1):
+        if option == default_value:
+            rendered_option = f"[bold cyan]{option}[/bold cyan] [dim](default)[/dim]"
+        else:
+            rendered_option = option
+        choice_table.add_row(f"{index}.", rendered_option)
+    _console.print(
+        Panel(
+            choice_table,
+            title=Text(label, style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
+    _console.print("[dim]Press Enter to accept the default.[/dim]")
+    default_index = options.index(default_value) + 1
+    raw_choice = typer.prompt("Select an option", default=str(default_index))
+    try:
+        choice_index = int(raw_choice)
+    except ValueError as error:
+        raise typer.BadParameter("Enter the number of one listed option.") from error
+    if choice_index < 1 or choice_index > len(options):
+        raise typer.BadParameter("Enter the number of one listed option.")
+    return options[choice_index - 1]
+
+
+def _print_wizard_intro(paths: ConfigPaths) -> None:
+    lines = [
+        "This wizard saves default blograg paths, server settings, and optional LLM credentials.",
+        f"Config file: {paths.config_path}",
+        f"Secrets file: {paths.secrets_path}",
+    ]
+    _console.print(
+        Panel(
+            "\n".join(lines),
+            title=Text("blograg config wizard", style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _print_wizard_step(step: str, title: str, description: str) -> None:
+    _console.print("")
+    _console.print(
+        Panel(
+            description,
+            title=Text(f"{step} · {title}", style="dim"),
+            title_align="left",
+            border_style="dim",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def _print_wizard_summary(config: CLIConfig, secrets: ProviderSecrets) -> None:
+    rows: list[tuple[str, str]] = [
+        ("default_blog_dir", config.default_blog_dir or "unset"),
+        ("default_index_dir", config.default_index_dir or "unset"),
+        ("serve.host", config.serve.host or "unset"),
+        ("serve.port", str(config.serve.port or "unset")),
+        ("serve.transport", config.serve.transport or "unset"),
+        ("build.concept_extractor", config.build.concept_extractor or "unset"),
+        ("build.labelgen_cache_dir", config.build.labelgen_cache_dir or "unset"),
+    ]
+    if config.build.concept_extractor == "llm":
+        rows.extend(
+            [
+                ("build.llm_provider", config.build.llm_provider or "unset"),
+                ("build.llm_model", config.build.llm_model or "unset"),
+                ("build.llm_base_url", config.build.llm_base_url or "unset"),
+                ("build.llm_api_key_env_var", config.build.llm_api_key_env_var or "unset"),
+                (
+                    "build.llm_batch_size",
+                    str(config.build.llm_batch_size or "unset"),
+                ),
+                (
+                    "build.llm_max_concepts_per_paragraph",
+                    str(config.build.llm_max_concepts_per_paragraph or "unset"),
+                ),
+                (
+                    "build.llm_output_contract_mode",
+                    config.build.llm_output_contract_mode or "unset",
+                ),
+            ]
+        )
+    _console.print("")
+    _print_key_value_table("Wizard summary", rows)
+    secret_rows = [
+        (provider, "configured" if configured else "missing")
+        for provider, configured in secret_status_map(secrets).items()
+    ]
+    _print_key_value_table("Secrets", secret_rows)
 
 
 def _validate_index_directory(index_dir: Path) -> list[str]:
