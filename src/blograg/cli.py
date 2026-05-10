@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, cast
@@ -23,6 +24,7 @@ from blograg.config import (
 from blograg.indexing import BuildProgressUpdate, build_index, load_index
 from blograg.mcp import create_mcp_server
 from blograg.service_manager import (
+    build_browser_url,
     build_health_url,
     build_server_url,
     derive_health_url,
@@ -217,6 +219,7 @@ def build(
         llm_max_concepts_per_paragraph=resolved_llm_max_concepts,
         llm_output_contract_mode=resolved_llm_output_contract_mode,
     )
+    started_at = time.monotonic()
     with _provider_secret_context(
         concept_extractor=resolved_concept_extractor,
         provider=resolved_llm_provider,
@@ -233,10 +236,16 @@ def build(
             )
         finally:
             progress_display.finish()
-    typer.echo(
-        f"Built blograg index with {len(index.paragraph_records)} paragraphs at "
-        f"{(resolved_index_dir / 'blograg').resolve()}"
-    )
+    build_seconds = time.monotonic() - started_at
+    typer.echo("Build complete.")
+    typer.echo(f"Paragraphs: {len(index.paragraph_records)}")
+    typer.echo(f"Index directory: {(resolved_index_dir / 'blograg').resolve()}")
+    typer.echo(f"Extractor: {resolved_concept_extractor}")
+    if resolved_concept_extractor == "llm":
+        typer.echo(f"LLM provider: {resolved_llm_provider}")
+        if resolved_llm_model:
+            typer.echo(f"LLM model: {resolved_llm_model}")
+    typer.echo(f"Elapsed: {build_seconds:.1f}s")
 
 
 @app.command()
@@ -333,7 +342,9 @@ def start(
     typer.echo(f"Started blograg server (PID {status.pid}).")
     typer.echo(f"PID file: {status.pid_file}")
     typer.echo(f"Log file: {status.log_file}")
-    typer.echo(f"URL: {status.mcp_url}")
+    typer.echo(f"MCP endpoint: {status.mcp_url}")
+    typer.echo(f"Health endpoint: {status.health_url}")
+    typer.echo(f"Open {build_browser_url(host=resolved_host, port=resolved_port)} in your browser.")
 
 
 @app.command()
@@ -375,16 +386,18 @@ def status(
         mcp_url=resolved_mcp_url,
         health_url=resolved_health_url,
     )
-    typer.echo(f"pid_file={observed_status.pid_file}")
-    typer.echo(f"log_file={observed_status.log_file}")
-    typer.echo(f"mcp_url={observed_status.mcp_url}")
-    typer.echo(f"health_url={observed_status.health_url}")
-    typer.echo(f"pid={observed_status.pid if observed_status.pid is not None else 'missing'}")
-    typer.echo(f"process_running={'yes' if observed_status.process_running else 'no'}")
-    typer.echo(f"http_ready={'yes' if observed_status.http_ready else 'no'}")
+    server_state = "running" if observed_status.process_running else "stopped"
+    http_state = "ready" if observed_status.http_ready else "not ready"
+    typer.echo(f"Server: {server_state}")
+    typer.echo(f"PID: {observed_status.pid if observed_status.pid is not None else 'missing'}")
+    typer.echo(f"MCP endpoint: {observed_status.mcp_url}")
+    typer.echo(f"Health endpoint: {observed_status.health_url}")
+    typer.echo(f"PID file: {observed_status.pid_file}")
+    typer.echo(f"Log file: {observed_status.log_file}")
+    typer.echo(f"HTTP status: {http_state}")
     if observed_status.http_status_code is not None:
-        typer.echo(f"http_status={observed_status.http_status_code}")
-    typer.echo(f"detail={observed_status.detail}")
+        typer.echo(f"HTTP code: {observed_status.http_status_code}")
+    typer.echo(f"Detail: {observed_status.detail}")
 
 
 @app.command()
@@ -756,6 +769,12 @@ def config_wizard() -> None:
     save_cli_config(config)
     save_provider_secrets(secrets)
     typer.echo("Saved blograg config and secrets.")
+    if config.default_blog_dir and config.default_index_dir:
+        typer.echo("Next: run `blograg build`, then `blograg start`.")
+    elif config.default_index_dir:
+        typer.echo("Next: run `blograg start` when your index is ready.")
+    else:
+        typer.echo("Next: configure an index path or pass `--index-dir` when serving.")
 
 
 def _coerce_path(value: str | None) -> Path | None:

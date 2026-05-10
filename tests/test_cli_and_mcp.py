@@ -158,7 +158,9 @@ def test_build_command_reports_written_index(
     assert result.exit_code == 0
     assert built_with["blog_dir"] == tmp_path / "blog"
     assert built_with["index_dir"] == tmp_path / "index"
-    assert "Built blograg index with 2 paragraphs" in result.stdout
+    assert "Build complete." in result.stdout
+    assert "Paragraphs: 2" in result.stdout
+    assert "Extractor: heuristic" in result.stdout
 
 
 def test_build_command_can_select_llm_extraction(
@@ -623,7 +625,8 @@ def test_start_command_uses_managed_runtime_paths(
     assert captured["pid_file"] == tmp_path / "config-root" / "server.pid"
     assert captured["log_file"] == tmp_path / "config-root" / "server.log"
     assert "Started blograg server (PID 12345)." in result.stdout
-    assert "URL: http://127.0.0.1:8765/mcp" in result.stdout
+    assert "MCP endpoint: http://127.0.0.1:8765/mcp" in result.stdout
+    assert "Health endpoint: http://127.0.0.1:8765/healthz" in result.stdout
 
 
 def test_stop_command_uses_managed_runtime_paths(
@@ -675,11 +678,11 @@ def test_status_command_reports_managed_runtime_state(
     result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0
-    assert "mcp_url=http://0.0.0.0:8877/mcp" in result.stdout
-    assert "health_url=http://0.0.0.0:8877/healthz" in result.stdout
-    assert "process_running=yes" in result.stdout
-    assert "http_ready=yes" in result.stdout
-    assert "http_status=200" in result.stdout
+    assert "Server: running" in result.stdout
+    assert "MCP endpoint: http://0.0.0.0:8877/mcp" in result.stdout
+    assert "Health endpoint: http://0.0.0.0:8877/healthz" in result.stdout
+    assert "HTTP status: ready" in result.stdout
+    assert "HTTP code: 200" in result.stdout
 
 
 def test_doctor_command_reports_actionable_checks(
