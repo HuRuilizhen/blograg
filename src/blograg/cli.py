@@ -554,9 +554,28 @@ def doctor() -> None:
     )
     if not status.process_running:
         issues.append(f"Managed process: {process_detail}")
-    doctor_rows.append(("Service", "HTTP health", _status_label(status.http_ready), status.detail))
+    health_detail = (
+        status.detail if status.http_ready else f"{status.detail}. Check logs at {status.log_file}."
+    )
+    doctor_rows.append(("Service", "HTTP health", _status_label(status.http_ready), health_detail))
     if not status.http_ready:
-        issues.append(f"HTTP health: {status.detail}")
+        issues.append(f"HTTP health: {health_detail}")
+
+    resolved_retrieval_strategy = (
+        persisted_config.retrieval.retrieval_strategy or "greedy_label_coverage_semantic_rerank"
+    )
+    resolved_label_free_fallback_strategy = (
+        persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
+    )
+    doctor_rows.append(("Retrieval", "Strategy", "OK", resolved_retrieval_strategy))
+    doctor_rows.append(
+        (
+            "Retrieval",
+            "Fallback strategy",
+            "OK",
+            resolved_label_free_fallback_strategy,
+        )
+    )
 
     for client in ("codex", "openclaw"):
         executable = shutil.which(client)
@@ -571,6 +590,23 @@ def doctor() -> None:
         )
         if executable is None:
             issues.append(f"{client} executable: {detail}")
+        registration_status = get_client_registration_status(
+            client=client,
+            server_name="blograg",
+        )
+        binding_detail = registration_status.detail
+        if registration_status.url is not None:
+            binding_detail = f"{binding_detail} URL: {registration_status.url}"
+        doctor_rows.append(
+            (
+                "Clients",
+                f"{client} binding",
+                _status_label(registration_status.configured),
+                binding_detail,
+            )
+        )
+        if not registration_status.configured:
+            issues.append(f"{client} binding: {binding_detail}")
 
     extractor = persisted_config.build.concept_extractor or "heuristic"
     doctor_rows.append(("LLM", "Extractor mode", "OK", extractor))

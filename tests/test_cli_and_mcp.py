@@ -917,6 +917,10 @@ def test_doctor_command_reports_actionable_checks(
                 llm_model="mistral-small",
             ),
             serve=ServeDefaults(host="127.0.0.1", port=8765),
+            retrieval=RetrievalDefaults(
+                retrieval_strategy="label_gate_semantic_rank",
+                label_free_fallback_strategy="concept_gate_semantic_rank",
+            ),
         )
     )
     save_provider_secrets(ProviderSecrets(mistral="secret-value"))
@@ -947,6 +951,19 @@ def test_doctor_command_reports_actionable_checks(
 
     monkeypatch.setattr(blograg.cli.shutil, "which", fake_which)
 
+    def fake_get_client_registration_status(*, client: str, server_name: str) -> object:
+        return SimpleNamespace(
+            configured=True,
+            detail=f"Configured for {client}.",
+            url=f"http://127.0.0.1:8765/mcp?client={client}&server={server_name}",
+        )
+
+    monkeypatch.setattr(
+        blograg.cli,
+        "get_client_registration_status",
+        fake_get_client_registration_status,
+    )
+
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 0
@@ -957,6 +974,9 @@ def test_doctor_command_reports_actionable_checks(
     assert "Index artifacts" in result.stdout
     assert "Index looks complete." in result.stdout
     assert "codex executable" in result.stdout
+    assert "codex binding" in result.stdout
+    assert "label_gate_semantic_rank" in result.stdout
+    assert "concept_gate_semantic_rank" in result.stdout
     assert "/usr/bin/codex" in result.stdout
 
 
@@ -996,11 +1016,27 @@ def test_doctor_command_fails_when_key_setup_is_missing(
 
     monkeypatch.setattr(blograg.cli.shutil, "which", fake_missing_which)
 
+    def fake_get_client_registration_status(*, client: str, server_name: str) -> object:
+        return SimpleNamespace(
+            configured=False,
+            detail=f"`{server_name}` is not configured for {client}.",
+            url=None,
+        )
+
+    monkeypatch.setattr(
+        blograg.cli,
+        "get_client_registration_status",
+        fake_get_client_registration_status,
+    )
+
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 1
     assert "LLM model" in result.stdout
     assert "Missing build.llm_model." in result.stdout
+    assert "Connection refused" in result.stdout
+    assert "server.log" in result.stdout
+    assert "codex binding" in result.stdout
     assert "Doctor found" in result.stderr
 
 
