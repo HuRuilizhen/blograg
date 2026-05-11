@@ -59,7 +59,6 @@ blograg serve --index-dir /path/to/index
 
 Useful options:
 
-- `--transport {streamable-http|stdio}`
 - `--host TEXT`
 - `--port INTEGER`
 - `--labelgen-cache-dir TEXT`
@@ -83,7 +82,6 @@ blograg start --index-dir /path/to/index
 
 Useful options:
 
-- `--transport {streamable-http|stdio}`
 - `--host TEXT`
 - `--port INTEGER`
 - `--retrieval-strategy ...`
@@ -275,7 +273,7 @@ Remove one stored provider API key.
 Interactive first-run setup for:
 
 - default blog and index paths
-- default serve host/port/transport
+- default serve host/port
 - build defaults
 - optional LLM provider settings
 - optional provider API key storage

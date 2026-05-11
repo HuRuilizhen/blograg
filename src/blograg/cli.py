@@ -95,10 +95,6 @@ _LABELGEN_CACHE_DIR_OPTION = typer.Option(
         "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > upstream default."
     ),
 )
-_TRANSPORT_OPTION = typer.Option(
-    None,
-    help="MCP transport to use: streamable-http or stdio.",
-)
 _HOST_OPTION = typer.Option(
     None,
     help="Host to bind for HTTP MCP transport.",
@@ -286,7 +282,6 @@ def build(
 def serve(
     index_dir: Path | None = _INDEX_DIR_SERVE_OPTION,
     labelgen_cache_dir: str | None = _LABELGEN_CACHE_DIR_OPTION,
-    transport: Literal["streamable-http", "stdio"] | None = _TRANSPORT_OPTION,
     host: str | None = _HOST_OPTION,
     port: int | None = _PORT_OPTION,
     retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
@@ -304,7 +299,6 @@ def serve(
         guidance="Provide `--index-dir` or configure `default_index_dir` first.",
         must_exist=False,
     )
-    resolved_transport = transport or persisted_config.serve.transport or "streamable-http"
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
     resolved_retrieval_strategy = (
@@ -332,8 +326,7 @@ def serve(
     index.pipeline.config.retrieval.label_free_fallback_strategy = (
         resolved_label_free_fallback_strategy
     )
-    if resolved_transport == "streamable-http":
-        _quiet_streamable_http_manager_logs()
+    _quiet_streamable_http_manager_logs()
     server = create_mcp_server(index, host=resolved_host, port=resolved_port)
     labelgen_config = index.pipeline.config.labelgen
     llm_config = labelgen_config.extraction.llm
@@ -349,13 +342,12 @@ def serve(
         api_key_env_var=getattr(llm_config, "api_key_env_var", None),
         secrets=provider_secrets,
     ):
-        server.run(transport=resolved_transport)
+        server.run(transport="streamable-http")
 
 
 @app.command()
 def start(
     index_dir: Path | None = _INDEX_DIR_SERVE_OPTION,
-    transport: Literal["streamable-http", "stdio"] | None = _TRANSPORT_OPTION,
     host: str | None = _HOST_OPTION,
     port: int | None = _PORT_OPTION,
     retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
@@ -376,7 +368,6 @@ def start(
         guidance="Provide `--index-dir` or configure `default_index_dir` first.",
         must_exist=False,
     )
-    resolved_transport = transport or persisted_config.serve.transport or "streamable-http"
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
     resolved_pid_file = pid_file or config_paths.pid_path
@@ -387,7 +378,6 @@ def start(
             index_dir=resolved_index_dir,
             host=resolved_host,
             port=resolved_port,
-            transport=resolved_transport,
             retrieval_strategy=retrieval_strategy,
             label_free_fallback_strategy=label_free_fallback_strategy,
             pid_file=resolved_pid_file,
@@ -853,14 +843,6 @@ def config_wizard() -> None:
             default=str(config.serve.port or 8765),
         )
     )
-    config.serve.transport = cast(
-        Literal["streamable-http", "stdio"],
-        _prompt_choice(
-            "Default MCP transport",
-            ["streamable-http", "stdio"],
-            config.serve.transport or "streamable-http",
-        ),
-    )
 
     _print_wizard_step(
         "Step 3",
@@ -1110,7 +1092,6 @@ def _print_wizard_summary(config: CLIConfig, secrets: ProviderSecrets) -> None:
         ("default_index_dir", config.default_index_dir or "unset"),
         ("serve.host", config.serve.host or "unset"),
         ("serve.port", str(config.serve.port or "unset")),
-        ("serve.transport", config.serve.transport or "unset"),
         ("build.concept_extractor", config.build.concept_extractor or "unset"),
         ("build.labelgen_cache_dir", config.build.labelgen_cache_dir or "unset"),
     ]

@@ -7,7 +7,7 @@ core and treats heading-delimited markdown sections as the paragraph unit.
 It is designed for local, single-blog usage:
 
 - build a paragraph index from one Jekyll-style repository
-- serve that index over MCP Streamable HTTP or stdio
+- serve that index over MCP Streamable HTTP
 - inspect service state from the CLI and a lightweight browser page
 - register the HTTP endpoint with local MCP clients such as Codex or OpenClaw
 
