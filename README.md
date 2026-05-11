@@ -4,29 +4,33 @@
 It uses [`labelrag`](https://github.com/HuRuilizhen/labelrag) as the retrieval
 core and treats heading-delimited markdown sections as the paragraph unit.
 
-Concept extraction and retrieval configuration are intentionally thin wrappers
-around upstream `labelrag` and
-[`labelgen`](https://github.com/HuRuilizhen/labelgen) capabilities. For deeper
-configuration semantics, prefer the upstream repositories and their public API
-documentation.
+It is designed for local, single-blog usage:
 
-## MVP Scope
+- build a paragraph index from one Jekyll-style repository
+- serve that index over MCP Streamable HTTP or stdio
+- inspect service state from the CLI and a lightweight browser page
+- register the HTTP endpoint with local MCP clients such as Codex or OpenClaw
 
-The current MVP supports:
+Detailed command reference lives in
+[`docs/commands.md`](https://github.com/HuRuilizhen/blograg/blob/main/docs/commands.md).
+
+## Scope
+
+Current `0.0.0` scope:
 
 - one local blog directory
 - Jekyll-style front matter parsing
 - heading-delimited paragraph segmentation
 - full rebuild only
-- a minimal MCP tool surface centered on `retrieve_paragraphs`
+- one MCP tool: `retrieve_paragraphs`
 
-The current MVP does not support:
+Out of scope:
 
-- token chunking or overlap windows
 - incremental indexing
 - multiple blog roots
 - runtime rebuilds from the MCP server
 - alternate storage backends
+- broad MCP tool surfaces beyond paragraph retrieval
 
 ## Installation
 
@@ -37,100 +41,66 @@ python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 ```
 
-## CLI
+## Quick Start
 
-Initialize or inspect persistent defaults and local provider secrets:
+Initialize local defaults and optional provider secrets:
 
 ```bash
 blograg config wizard
-blograg config show
 ```
 
-Build a fresh local index:
+Build an index:
 
 ```bash
 blograg build --blog-dir /path/to/blog --index-dir /path/to/index
 ```
 
-Serve an existing index over MCP Streamable HTTP:
-
-```bash
-blograg serve --index-dir /path/to/index
-```
-
-`serve` does not rebuild automatically. If the index is missing or incomplete,
-run `build` first.
-
-Start the HTTP MCP server in the background:
+Start the managed HTTP service:
 
 ```bash
 blograg start --index-dir /path/to/index
 ```
 
-Inspect managed server status:
+Inspect service state:
 
 ```bash
 blograg status
+blograg logs --follow
+blograg doctor
 ```
 
-Inspect managed client bindings:
+Open the browser status page:
+
+```text
+http://127.0.0.1:8765/
+```
+
+Register the MCP endpoint with a client:
 
 ```bash
+blograg register --client codex
 blograg register --show
 ```
 
-Inspect managed server logs:
+## Core Commands
 
-```bash
-blograg logs
-blograg logs --follow
-```
+Most day-to-day usage is centered on:
 
-Stop the managed background server:
+- `blograg config wizard`
+- `blograg build`
+- `blograg serve`
+- `blograg start`
+- `blograg status`
+- `blograg logs`
+- `blograg doctor`
+- `blograg register`
 
-```bash
-blograg stop
-```
-
-## MCP Client Setup
-
-`blograg` exposes an MCP server over Streamable HTTP through:
-
-```bash
-blograg serve --index-dir /path/to/index
-```
-
-Register the MCP endpoint for Codex and/or OpenClaw:
-
-```bash
-blograg register --client codex
-blograg register --client openclaw
-```
-
-If you want a managed local HTTP service first:
-
-```bash
-blograg start --index-dir /path/to/index
-blograg register --client codex
-blograg register --client openclaw
-```
-
-You can also register a specific URL directly:
-
-```bash
-blograg register \
-  --client codex \
-  --server-name blograg-local \
-  --url http://127.0.0.1:8765/mcp
-```
-
-The generated registrations point clients at a local Streamable HTTP endpoint
-instead of a stdio subprocess. That avoids stdio transport breakage from noisy
-third-party model-loading logs and keeps Codex/OpenClaw on the same stable URL.
+For command-by-command examples and option summaries, see
+[`docs/commands.md`](https://github.com/HuRuilizhen/blograg/blob/main/docs/commands.md).
 
 ## Persistent Config
 
-`blograg` now supports persistent user-level config and secrets:
+`blograg` stores user-level config and secrets in:
 
 - `config.toml`
 - `secrets.toml`
@@ -145,62 +115,74 @@ Useful commands:
 ```bash
 blograg config path
 blograg config show
+blograg config show --all
 blograg config set default_index_dir /path/to/index
-blograg config set build.llm_model mistral-small
+blograg config set retrieval.retrieval_strategy label_gate_semantic_rank
 blograg config set-secret mistral --api-key your-key-here
 ```
 
-`config show` masks secret values and reports only whether each provider key is
+`config show` masks secret values and only reports whether each provider key is
 configured.
 
-## LLM Credentials
+## MCP Service Model
 
-If your index was built with `--concept-extractor llm`, upstream query analysis
-still needs the corresponding provider API key at serve time.
+`blograg serve` loads an existing index and starts the MCP server. It does not
+rebuild automatically. If the index is missing or incomplete, run `build`
+first.
 
-You can either:
+The default transport is Streamable HTTP. The default HTTP binding is:
 
-- store the key through `blograg config set-secret ...`
-- or continue providing it through environment variables
+- host: `127.0.0.1`
+- port: `8765`
 
-Example persistent secret setup:
-
-```bash
-blograg config set-secret mistral --api-key your-key-here
-```
-
-Example environment variable setup:
+If you need LAN access, bind explicitly:
 
 ```bash
-MISTRAL_API_KEY=your-key-here
+blograg serve --host 0.0.0.0 --port 8765
 ```
 
-If you configure both an environment variable and a stored secret, explicit CLI
-arguments still take precedence over persisted defaults.
+Current HTTP endpoints:
 
-## Concept Extraction Modes
+- `/mcp`
+- `/`
+- `/healthz`
 
-`blograg build` exposes the current upstream concept extraction modes:
+The browser page at `/` is a lightweight status page, not a separate web app.
 
-- `spacy`
+## MCP Client Registration
+
+Register the local endpoint with one client at a time:
+
+```bash
+blograg register --client codex
+blograg register --client openclaw
+```
+
+Inspect current registration state:
+
+```bash
+blograg register --show
+blograg register --show --server-name blograg-local
+```
+
+You can also register an explicit URL:
+
+```bash
+blograg register \
+  --client codex \
+  --server-name blograg-local \
+  --url http://127.0.0.1:8765/mcp
+```
+
+## LLM Usage
+
+`blograg build` supports the upstream extraction modes:
+
 - `heuristic`
+- `spacy`
 - `llm`
 
-The CLI option names are thin wrappers around upstream `labelgen` configuration.
-The following build options currently map directly to LLM extraction settings:
-
-- `--concept-extractor`
-- `--llm-provider`
-- `--llm-model`
-- `--llm-base-url`
-- `--llm-api-key-env-var`
-- `--llm-batch-size`
-- `--llm-max-concepts-per-paragraph`
-- `--llm-output-contract-mode`
-
-## LLM Build Example
-
-Example Mistral build:
+Example LLM build:
 
 ```bash
 MISTRAL_API_KEY=your-key-here \
@@ -209,36 +191,19 @@ blograg build \
   --index-dir /path/to/index \
   --concept-extractor llm \
   --llm-provider mistral \
-  --llm-model mistral-small \
-  --llm-base-url https://api.mistral.ai/v1/chat/completions \
-  --llm-batch-size 1
+  --llm-model mistral-small
 ```
 
-Practical notes:
+If an index was built with `--concept-extractor llm`, query analysis at serve
+time still needs access to the corresponding provider API key. You can provide
+it through:
 
-- `--llm-batch-size 1` is the safest current setting for Mistral concept
-  extraction in real builds.
-- `--llm-base-url` accepts either a provider base URL or a full chat-completions
-  endpoint URL, following upstream behavior.
+- `blograg config set-secret ...`
+- environment variables such as `MISTRAL_API_KEY`
 
-## LLM Serve Requirements
+## Retrieval Output
 
-If an index was built with `--concept-extractor llm`, the `serve` process also
-needs access to the corresponding provider API key because query analysis still
-uses the fitted upstream concept-extraction path.
-
-Example:
-
-```bash
-blograg serve --index-dir /path/to/index
-```
-
-When the matching provider secret is stored through `blograg config set-secret`,
-you do not need to export the API key again before `serve`.
-
-## MCP Tool
-
-The server exposes one tool:
+The server currently exposes one tool:
 
 ```text
 retrieve_paragraphs(query: str, top_k: int = 5)
@@ -255,17 +220,10 @@ Each result includes:
 - `trace.score`
 - `trace.score_kind`
 
-## Paragraph Segmentation Rules
-
-- A paragraph begins at a markdown heading.
-- A paragraph ends immediately before the next heading.
-- Content before the first heading is preserved as a standalone intro paragraph.
-- Intro paragraphs have no `section_heading`.
-- Paragraph IDs follow `slug::pNNN`.
-
 ## Index Layout
 
-`blograg build` writes an outer `blograg` directory inside the chosen index root:
+`blograg build` writes an outer `blograg` directory inside the chosen index
+root:
 
 ```text
 /path/to/index/
@@ -273,50 +231,29 @@ Each result includes:
     manifest.json
     paragraphs.json
     labelrag/
-      config.json.gz
-      corpus_index.json.gz
-      fit_result.json.gz
-      label_generator.json.gz
-      manifest.json.gz
-      paragraph_embeddings.npz
+      ...
 ```
 
-The outer layer stores `blograg`-specific metadata such as the outer schema
-version and `blograg` package version. The inner `labelrag` directory is a
-standard persisted `labelrag` snapshot and remains responsible for upstream
-pipeline configuration details.
+The outer layer stores `blograg`-specific metadata and paragraph source
+metadata. The inner `labelrag` directory is a normal persisted upstream
+snapshot.
 
 ## Runtime Notes
 
-- The default MVP configuration uses heuristic concept extraction instead of the
-  spaCy extractor, so it does not require downloading a spaCy language model.
-- The default embedding provider is still `sentence-transformers`, so the first
-  real build or first real query may download the configured embedding model if
-  it is not already cached locally.
-- When using `spacy`, install a compatible spaCy pipeline such as
-  `en_core_web_sm` as described in the upstream
-  [`labelrag` README](https://github.com/HuRuilizhen/labelrag/blob/main/README.md).
-
-## Upstream References
-
-- `labelrag` repository:
-  `https://github.com/HuRuilizhen/labelrag`
-- `labelrag` README:
-  `https://github.com/HuRuilizhen/labelrag/blob/main/README.md`
-- `labelrag` public API notes:
-  `https://github.com/HuRuilizhen/labelrag/blob/main/docs/public_api.md`
-- `labelgen` repository:
-  `https://github.com/HuRuilizhen/labelgen`
-- `labelgen` public API notes:
-  `https://github.com/HuRuilizhen/labelgen/blob/main/docs/public_api.md`
+- The default build mode is `heuristic`, so the default path does not require a
+  spaCy model download.
+- The default embedding provider still comes from upstream `labelrag`, so the
+  first real build or query may download the configured embedding model.
+- Advanced retrieval runtime settings live under persisted `retrieval.*`
+  config keys and can also be overridden through `serve` and `start`.
 
 ## Development Checks
-
-Run the local quality gates before committing:
 
 ```bash
 pytest
 ruff check .
 ruff format --check .
 pyright
+python -m build
+twine check dist/*
 ```
