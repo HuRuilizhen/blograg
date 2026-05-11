@@ -9,12 +9,9 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
-
-TransportMode = Literal["streamable-http", "stdio"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -99,7 +96,6 @@ def start_server(
     index_dir: Path,
     host: str,
     port: int,
-    transport: TransportMode,
     retrieval_strategy: str | None,
     label_free_fallback_strategy: str | None,
     pid_file: Path,
@@ -130,8 +126,6 @@ def start_server(
         "serve",
         "--index-dir",
         str(index_dir),
-        "--transport",
-        transport,
         "--host",
         host,
         "--port",

@@ -12,7 +12,6 @@ dist/
 build/
 *.egg-info/
 site/
-docs/
 .env.local
 index/
 .labelgen-cache/

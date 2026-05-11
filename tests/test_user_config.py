@@ -45,7 +45,6 @@ def test_user_config_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
             serve=ServeDefaults(
                 host="127.0.0.1",
                 port=8877,
-                transport="streamable-http",
             ),
             retrieval=RetrievalDefaults(
                 retrieval_strategy="label_gate_semantic_rank",

@@ -18,7 +18,6 @@ from blograg.config import (
     RetrievalStrategy,
 )
 
-TransportMode = Literal["streamable-http", "stdio"]
 LLMOutputContractMode = Literal["auto", "json_schema", "json_object", "prompt_only"]
 SecretProvider = Literal["openai", "mistral", "qwen", "ollama", "deepseek"]
 _DEFAULT_API_KEY_ENV_VARS: dict[SecretProvider, str] = {
@@ -32,7 +31,6 @@ _CONFIG_DIR_ENV_VAR = "BLOGRAG_CONFIG_DIR"
 _CONCEPT_EXTRACTOR_VALUES = {"spacy", "heuristic", "llm"}
 _LLM_PROVIDER_VALUES = {"openai", "mistral", "qwen", "ollama", "deepseek"}
 _LLM_OUTPUT_CONTRACT_VALUES = {"auto", "json_schema", "json_object", "prompt_only"}
-_TRANSPORT_VALUES = {"streamable-http", "stdio"}
 _RETRIEVAL_STRATEGY_VALUES = {
     "greedy_label_coverage_semantic_rerank",
     "label_gate_semantic_rank",
@@ -84,10 +82,6 @@ class ServeDefaults:
 
     host: str | None = field(default=None, metadata={"display_default": "default: 127.0.0.1"})
     port: int | None = field(default=None, metadata={"display_default": "default: 8765"})
-    transport: TransportMode | None = field(
-        default=None,
-        metadata={"display_default": "default: streamable-http"},
-    )
 
 
 @dataclass(slots=True)
@@ -202,10 +196,6 @@ def load_cli_config() -> CLIConfig:
         serve=ServeDefaults(
             host=_optional_str(serve_section.get("host")),
             port=_optional_int(serve_section.get("port")),
-            transport=cast(
-                TransportMode | None,
-                _optional_literal(serve_section.get("transport"), _TRANSPORT_VALUES),
-            ),
         ),
         retrieval=RetrievalDefaults(
             retrieval_strategy=cast(
@@ -313,12 +303,6 @@ def set_config_value(config: CLIConfig, key: str, raw_value: str) -> None:
     if key == "serve.port":
         config.serve.port = _parse_positive_int(key, raw_value)
         return
-    if key == "serve.transport":
-        config.serve.transport = cast(
-            TransportMode,
-            _parse_literal(key, raw_value, _TRANSPORT_VALUES),
-        )
-        return
     if key == "build.concept_extractor":
         config.build.concept_extractor = cast(
             ConceptExtractorMode,
@@ -384,9 +368,6 @@ def unset_config_value(config: CLIConfig, key: str) -> None:
         return
     if key == "serve.port":
         config.serve.port = None
-        return
-    if key == "serve.transport":
-        config.serve.transport = None
         return
     if key == "build.concept_extractor":
         config.build.concept_extractor = None

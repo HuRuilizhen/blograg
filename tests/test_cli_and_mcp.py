@@ -324,7 +324,7 @@ def test_build_command_uses_persisted_defaults_and_secret(
     assert config.labelrag_pipeline.retrieval.label_free_fallback_strategy == "semantic_only"
 
 
-def test_serve_command_loads_index_and_runs_stdio_server(
+def test_serve_command_loads_index_and_runs_http_server(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     loaded_with: dict[str, Path] = {}
@@ -428,7 +428,6 @@ def test_serve_command_uses_persisted_defaults_and_secret(
             serve=ServeDefaults(
                 host="0.0.0.0",
                 port=8877,
-                transport="stdio",
             ),
             retrieval=RetrievalDefaults(
                 retrieval_strategy="label_gate_semantic_rank",
@@ -442,7 +441,7 @@ def test_serve_command_uses_persisted_defaults_and_secret(
 
     assert result.exit_code == 0
     assert loaded_with["index_dir"] == tmp_path / "index"
-    assert run_arguments["transport"] == "stdio"
+    assert run_arguments["transport"] == "streamable-http"
     assert run_arguments["host"] == "0.0.0.0"
     assert run_arguments["port"] == 8877
     assert run_arguments["api_key"] == "secret-value"
@@ -655,8 +654,6 @@ def test_serve_command_can_select_http_binding(
             "serve",
             "--index-dir",
             str(tmp_path / "index"),
-            "--transport",
-            "streamable-http",
             "--host",
             "127.0.0.1",
             "--port",
