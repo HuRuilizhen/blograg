@@ -1068,11 +1068,12 @@ def test_register_show_reports_client_registration_state(
     result = runner.invoke(app, ["register", "--show", "--server-name", "blograg-local"])
 
     assert result.exit_code == 0
-    assert "Bindings" in result.stdout
+    assert "Bindings · blograg-local" in result.stdout
     assert "codex" in result.stdout
     assert "openclaw" in result.stdout
     assert "http://127.0.0.1:8765/mcp" in result.stdout
     assert "not configured" in result.stdout
+    assert "Configured in 1 supported client(s)" in result.stdout
 
 
 def test_register_command_registers_single_client(
@@ -1093,6 +1094,7 @@ def test_register_command_registers_single_client(
     assert result.exit_code == 0
     assert calls == [("codex", "blograg-local", "http://0.0.0.0:8877/mcp")]
     assert "registered codex" in result.stdout
+    assert "blograg register --show --server-name blograg-local" in result.stdout
 
 
 def test_register_requires_client_without_show() -> None:
@@ -1100,6 +1102,13 @@ def test_register_requires_client_without_show() -> None:
 
     assert result.exit_code == 1
     assert "Provide `--client` or use `--show`" in result.stderr
+
+
+def test_register_rejects_show_with_client() -> None:
+    result = runner.invoke(app, ["register", "--show", "--client", "codex"])
+
+    assert result.exit_code == 1
+    assert "Do not combine `--show` with `--client`." in result.stderr
 
 
 def test_register_command_reports_registration_failures(monkeypatch: pytest.MonkeyPatch) -> None:

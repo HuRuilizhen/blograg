@@ -659,7 +659,11 @@ def register(
     """Register the MCP endpoint with Codex or OpenClaw, or inspect current bindings."""
 
     if show:
+        if client is not None:
+            typer.echo("Do not combine `--show` with `--client`.", err=True)
+            raise typer.Exit(code=1)
         rows: list[tuple[str, str, str]] = []
+        configured_count = 0
         for supported_client in ("codex", "openclaw"):
             status = get_client_registration_status(
                 client=supported_client,
@@ -668,8 +672,19 @@ def register(
             detail = status.detail
             if status.url is not None:
                 detail = f"{detail} URL: {status.url}"
+            if status.configured:
+                configured_count += 1
             rows.append((supported_client, _status_label(status.configured), detail))
-        _print_client_status_table("Bindings", rows)
+        _print_client_status_table(f"Bindings · {server_name}", rows)
+        if configured_count == 0:
+            _console.print(
+                f"No supported clients are configured for `{server_name}`. "
+                "Run `blograg register --client ...` first."
+            )
+        else:
+            _console.print(
+                f"Configured in {configured_count} supported client(s) for `{server_name}`."
+            )
         return
 
     if client is None:
@@ -688,6 +703,7 @@ def register(
             url=resolved_url,
         )
         typer.echo(message)
+        typer.echo(f"Next: `blograg register --show --server-name {server_name}`")
     except (RuntimeError, subprocess.CalledProcessError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
