@@ -60,6 +60,7 @@ from blograg.user_config import (
     unset_config_value,
     unset_secret_value,
 )
+from blograg.version import __version__
 
 app = typer.Typer(help="Build and serve a local Jekyll-blog paragraph retriever.")
 config_app = typer.Typer(help="Manage persistent blograg defaults and local secrets.")
@@ -166,6 +167,27 @@ _REGISTER_CLIENT_OPTION = typer.Option(
     None,
     help="MCP client to register: codex or openclaw.",
 )
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        _console.print(f"blograg {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed blograg version and exit.",
+    ),
+) -> None:
+    del version
+
+
 app.add_typer(config_app, name="config")
 
 
