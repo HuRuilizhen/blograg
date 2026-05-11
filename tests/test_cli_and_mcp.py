@@ -304,10 +304,6 @@ def test_build_command_uses_persisted_defaults_and_secret(
                 llm_provider="mistral",
                 llm_model="mistral-small",
             ),
-            retrieval=RetrievalDefaults(
-                retrieval_strategy="label_gate_semantic_rank",
-                label_free_fallback_strategy="concept_overlap_semantic_rerank",
-            ),
         )
     )
     save_provider_secrets(ProviderSecrets(mistral="secret-value"))
@@ -322,11 +318,10 @@ def test_build_command_uses_persisted_defaults_and_secret(
     assert captured["api_key"] == "secret-value"
     assert llm_config.provider == "mistral"
     assert llm_config.model == "mistral-small"
-    assert config.labelrag_pipeline.retrieval.retrieval_strategy == "label_gate_semantic_rank"
-    assert (
-        config.labelrag_pipeline.retrieval.label_free_fallback_strategy
-        == "concept_overlap_semantic_rerank"
+    assert config.labelrag_pipeline.retrieval.retrieval_strategy == (
+        "greedy_label_coverage_semantic_rerank"
     )
+    assert config.labelrag_pipeline.retrieval.label_free_fallback_strategy == "semantic_only"
 
 
 def test_serve_command_loads_index_and_runs_stdio_server(
@@ -337,9 +332,13 @@ def test_serve_command_loads_index_and_runs_stdio_server(
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
                 labelgen=SimpleNamespace(
                     extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
-                )
+                ),
             )
         )
     )
@@ -387,6 +386,10 @@ def test_serve_command_uses_persisted_defaults_and_secret(
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
                 labelgen=SimpleNamespace(
                     resolved_extractor_mode=lambda: "llm",
                     extraction=SimpleNamespace(
@@ -396,7 +399,7 @@ def test_serve_command_uses_persisted_defaults_and_secret(
                             api_key_env_var=None,
                         )
                     ),
-                )
+                ),
             )
         )
     )
@@ -427,6 +430,10 @@ def test_serve_command_uses_persisted_defaults_and_secret(
                 port=8877,
                 transport="stdio",
             ),
+            retrieval=RetrievalDefaults(
+                retrieval_strategy="label_gate_semantic_rank",
+                label_free_fallback_strategy="concept_overlap_semantic_rerank",
+            ),
         )
     )
     save_provider_secrets(ProviderSecrets(mistral="secret-value"))
@@ -439,6 +446,70 @@ def test_serve_command_uses_persisted_defaults_and_secret(
     assert run_arguments["host"] == "0.0.0.0"
     assert run_arguments["port"] == 8877
     assert run_arguments["api_key"] == "secret-value"
+    assert fake_index.pipeline.config.retrieval.retrieval_strategy == "label_gate_semantic_rank"
+    assert fake_index.pipeline.config.retrieval.label_free_fallback_strategy == (
+        "concept_overlap_semantic_rerank"
+    )
+
+
+def test_serve_command_can_override_runtime_retrieval_strategies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
+                labelgen=SimpleNamespace(
+                    resolved_extractor_mode=lambda: "heuristic",
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(
+                            cache_dir=".labelgen-cache",
+                            provider="mistral",
+                            api_key_env_var=None,
+                        )
+                    ),
+                ),
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            del transport
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        del index_dir
+        return fake_index
+
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
+        del host, port
+        assert index is fake_index
+        return _FakeServer()
+
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+
+    result = runner.invoke(
+        app,
+        [
+            "serve",
+            "--index-dir",
+            str(tmp_path / "index"),
+            "--retrieval-strategy",
+            "label_gate_semantic_rank",
+            "--label-free-fallback-strategy",
+            "concept_gate_semantic_rank",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_index.pipeline.config.retrieval.retrieval_strategy == "label_gate_semantic_rank"
+    assert fake_index.pipeline.config.retrieval.label_free_fallback_strategy == (
+        "concept_gate_semantic_rank"
+    )
 
 
 def test_serve_command_applies_labelgen_cache_dir_from_environment(
@@ -448,9 +519,13 @@ def test_serve_command_applies_labelgen_cache_dir_from_environment(
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
                 labelgen=SimpleNamespace(
                     extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
-                )
+                ),
             )
         )
     )
@@ -494,9 +569,13 @@ def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
                 labelgen=SimpleNamespace(
                     extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
-                )
+                ),
             )
         )
     )
@@ -542,9 +621,13 @@ def test_serve_command_can_select_http_binding(
     fake_index = SimpleNamespace(
         pipeline=SimpleNamespace(
             config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
                 labelgen=SimpleNamespace(
                     extraction=SimpleNamespace(llm=SimpleNamespace(cache_dir=".labelgen-cache"))
-                )
+                ),
             )
         )
     )
@@ -664,6 +747,45 @@ def test_start_command_uses_managed_runtime_paths(
     assert "Started blograg server (PID 12345)." in result.stdout
     assert "MCP endpoint: http://127.0.0.1:8765/mcp" in result.stdout
     assert "Health endpoint: http://127.0.0.1:8765/healthz" in result.stdout
+
+
+def test_start_command_forwards_runtime_retrieval_strategy_overrides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
+    save_user_cli_config(CLIConfig(default_index_dir=str(tmp_path / "index")))
+
+    def fake_start_server(**kwargs: object) -> ServerStatus:
+        captured.update(kwargs)
+        return ServerStatus(
+            pid_file=cast(Path, kwargs["pid_file"]),
+            log_file=cast(Path, kwargs["log_file"]),
+            mcp_url="http://127.0.0.1:8765/mcp",
+            health_url="http://127.0.0.1:8765/healthz",
+            pid=12345,
+            process_running=True,
+            http_ready=True,
+            http_status_code=200,
+            detail="HTTP 200",
+        )
+
+    monkeypatch.setattr(blograg.cli, "start_server", fake_start_server)
+
+    result = runner.invoke(
+        app,
+        [
+            "start",
+            "--retrieval-strategy",
+            "label_gate_semantic_rank",
+            "--label-free-fallback-strategy",
+            "concept_gate_semantic_rank",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["retrieval_strategy"] == "label_gate_semantic_rank"
+    assert captured["label_free_fallback_strategy"] == "concept_gate_semantic_rank"
 
 
 def test_stop_command_uses_managed_runtime_paths(

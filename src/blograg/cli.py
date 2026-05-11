@@ -187,10 +187,6 @@ def build(
     llm_max_concepts_per_paragraph: int | None = _LLM_MAX_CONCEPTS_OPTION,
     llm_output_contract_mode: Literal["auto", "json_schema", "json_object", "prompt_only"]
     | None = _LLM_OUTPUT_CONTRACT_OPTION,
-    retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
-    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = (
-        _LABEL_FREE_FALLBACK_STRATEGY_OPTION
-    ),
 ) -> None:
     """Build a fresh local index from one blog directory."""
 
@@ -238,18 +234,6 @@ def build(
         if llm_output_contract_mode is not None
         else persisted_config.build.llm_output_contract_mode or "auto"
     )
-    resolved_retrieval_strategy = (
-        retrieval_strategy
-        if retrieval_strategy is not None
-        else (
-            persisted_config.retrieval.retrieval_strategy or "greedy_label_coverage_semantic_rerank"
-        )
-    )
-    resolved_label_free_fallback_strategy = (
-        label_free_fallback_strategy
-        if label_free_fallback_strategy is not None
-        else persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
-    )
     if resolved_concept_extractor == "llm" and not resolved_llm_model:
         typer.echo(
             "LLM extraction requires a configured model name. "
@@ -268,8 +252,6 @@ def build(
         llm_batch_size=resolved_llm_batch_size,
         llm_max_concepts_per_paragraph=resolved_llm_max_concepts,
         llm_output_contract_mode=resolved_llm_output_contract_mode,
-        retrieval_strategy=resolved_retrieval_strategy,
-        label_free_fallback_strategy=resolved_label_free_fallback_strategy,
     )
     started_at = time.monotonic()
     with _provider_secret_context(
@@ -307,6 +289,10 @@ def serve(
     transport: Literal["streamable-http", "stdio"] | None = _TRANSPORT_OPTION,
     host: str | None = _HOST_OPTION,
     port: int | None = _PORT_OPTION,
+    retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
+    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = (
+        _LABEL_FREE_FALLBACK_STRATEGY_OPTION
+    ),
 ) -> None:
     """Load an existing local index and start the MCP server."""
 
@@ -321,6 +307,18 @@ def serve(
     resolved_transport = transport or persisted_config.serve.transport or "streamable-http"
     resolved_host = host or persisted_config.serve.host or "127.0.0.1"
     resolved_port = port or persisted_config.serve.port or 8765
+    resolved_retrieval_strategy = (
+        retrieval_strategy
+        if retrieval_strategy is not None
+        else (
+            persisted_config.retrieval.retrieval_strategy or "greedy_label_coverage_semantic_rerank"
+        )
+    )
+    resolved_label_free_fallback_strategy = (
+        label_free_fallback_strategy
+        if label_free_fallback_strategy is not None
+        else persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
+    )
     try:
         index = load_index(index_dir=resolved_index_dir)
     except (FileNotFoundError, RuntimeError) as error:
@@ -330,6 +328,10 @@ def serve(
     cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
     if cache_dir is not None:
         index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
+    index.pipeline.config.retrieval.retrieval_strategy = resolved_retrieval_strategy
+    index.pipeline.config.retrieval.label_free_fallback_strategy = (
+        resolved_label_free_fallback_strategy
+    )
     if resolved_transport == "streamable-http":
         _quiet_streamable_http_manager_logs()
     server = create_mcp_server(index, host=resolved_host, port=resolved_port)
@@ -356,6 +358,10 @@ def start(
     transport: Literal["streamable-http", "stdio"] | None = _TRANSPORT_OPTION,
     host: str | None = _HOST_OPTION,
     port: int | None = _PORT_OPTION,
+    retrieval_strategy: RetrievalStrategy | None = _RETRIEVAL_STRATEGY_OPTION,
+    label_free_fallback_strategy: LabelFreeFallbackStrategy | None = (
+        _LABEL_FREE_FALLBACK_STRATEGY_OPTION
+    ),
     pid_file: Path | None = _PID_FILE_OPTION,
     log_file: Path | None = _LOG_FILE_OPTION,
     force_restart: bool = _FORCE_RESTART_OPTION,
@@ -382,6 +388,8 @@ def start(
             host=resolved_host,
             port=resolved_port,
             transport=resolved_transport,
+            retrieval_strategy=retrieval_strategy,
+            label_free_fallback_strategy=label_free_fallback_strategy,
             pid_file=resolved_pid_file,
             log_file=resolved_log_file,
             config_dir=config_paths.config_dir,

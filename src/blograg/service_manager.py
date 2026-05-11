@@ -100,6 +100,8 @@ def start_server(
     host: str,
     port: int,
     transport: TransportMode,
+    retrieval_strategy: str | None,
+    label_free_fallback_strategy: str | None,
     pid_file: Path,
     log_file: Path,
     config_dir: Path | None,
@@ -135,6 +137,10 @@ def start_server(
         "--port",
         str(port),
     ]
+    if retrieval_strategy is not None:
+        command.extend(["--retrieval-strategy", retrieval_strategy])
+    if label_free_fallback_strategy is not None:
+        command.extend(["--label-free-fallback-strategy", label_free_fallback_strategy])
     environment = os.environ.copy()
     if config_dir is not None:
         environment["BLOGRAG_CONFIG_DIR"] = str(config_dir)
