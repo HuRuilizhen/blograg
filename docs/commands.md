@@ -1,6 +1,6 @@
 # Command Reference
 
-This document is the detailed CLI reference for `blograg 0.0.0`.
+This document is the detailed CLI reference for `blograg 0.0.1`.
 
 For the shorter product overview and first-run path, see the repository
 `README.md`.
@@ -8,6 +8,7 @@ For the shorter product overview and first-run path, see the repository
 ## Top-Level Commands
 
 ```text
+blograg --version
 blograg build
 blograg serve
 blograg start
@@ -18,6 +19,8 @@ blograg doctor
 blograg register
 blograg config ...
 ```
+
+`blograg --version` prints the installed CLI version and exits.
 
 ## `blograg build`
 

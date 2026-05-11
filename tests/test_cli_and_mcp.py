@@ -29,9 +29,17 @@ from blograg.user_config import (
     save_provider_secrets,
 )
 from blograg.user_config import save_cli_config as save_user_cli_config
+from blograg.version import __version__
 from tests.testsupport import FakeEmbeddingProvider
 
 runner = CliRunner()
+
+
+def test_version_option_prints_current_version() -> None:
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"blograg {__version__}"
 
 
 def test_create_mcp_server_exposes_retrieve_paragraphs_tool(tmp_path: Path) -> None:
