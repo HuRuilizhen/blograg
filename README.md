@@ -3,8 +3,7 @@
 `blograg` is a local MCP-oriented retrieval tool for one Jekyll-style blog.
 It uses [`labelrag`](https://github.com/HuRuilizhen/labelrag) as the retrieval
 core and treats heading-delimited markdown sections as the paragraph unit.
-
-It is designed for local, single-blog usage:
+It is designed to:
 
 - build a paragraph index from one Jekyll-style repository
 - serve that index over MCP Streamable HTTP
@@ -12,33 +11,26 @@ It is designed for local, single-blog usage:
 - register the HTTP endpoint with local MCP clients such as Codex or OpenClaw
 
 Detailed command reference lives in
-[`docs/commands.md`](https://github.com/HuRuilizhen/blograg/blob/main/docs/commands.md).
-
-## Scope
-
-Current `0.0.0` scope:
-
-- one local blog directory
-- Jekyll-style front matter parsing
-- heading-delimited paragraph segmentation
-- full rebuild only
-- one MCP tool: `retrieve_paragraphs`
-
-Out of scope:
-
-- incremental indexing
-- multiple blog roots
-- runtime rebuilds from the MCP server
-- alternate storage backends
-- broad MCP tool surfaces beyond paragraph retrieval
+[`docs/commands.md`](https://github.com/HuRuilizhen/blograg-mcp/blob/main/docs/commands.md).
 
 ## Installation
 
+Recommended for most users:
+
 ```bash
-python3.11 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
+pipx install blograg
+```
+
+If you prefer `pip`:
+
+```bash
+python -m pip install blograg
+```
+
+If you use Homebrew:
+
+```bash
+brew install HuRuilizhen/tap/blograg
 ```
 
 ## Quick Start
@@ -96,7 +88,7 @@ Most day-to-day usage is centered on:
 - `blograg register`
 
 For command-by-command examples and option summaries, see
-[`docs/commands.md`](https://github.com/HuRuilizhen/blograg/blob/main/docs/commands.md).
+[`docs/commands.md`](https://github.com/HuRuilizhen/blograg-mcp/blob/main/docs/commands.md).
 
 ## Persistent Config
 
