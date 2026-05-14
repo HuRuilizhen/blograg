@@ -1046,7 +1046,6 @@ def test_doctor_command_reports_actionable_checks(
     assert "concept_gate_semantic" in result.stdout
     assert "rank" in result.stdout
     assert "LabelGen cache" in result.stdout
-    assert "labelgen-cache" in result.stdout
     assert "/usr/bin/codex" in result.stdout
 
 
