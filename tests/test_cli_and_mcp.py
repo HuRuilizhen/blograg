@@ -171,6 +171,7 @@ def test_build_command_reports_written_index(
     assert built_with["index_dir"] == tmp_path / "index"
     assert "Build complete." in result.stdout
     assert "Paragraphs: 2" in result.stdout
+    assert "Index directory:" in result.stdout
     assert "Extractor: heuristic" in result.stdout
 
 
@@ -232,6 +233,9 @@ def test_build_command_can_select_llm_extraction(
     assert llm_config.base_url == "https://api.mistral.ai/v1/chat/completions"
     assert llm_config.api_key_env_var == "MISTRAL_API_KEY"
     assert llm_config.cache_dir == "/tmp/blograg-cache-cli"
+    assert "LabelGen cache: /tmp/blograg-cache-cli" in result.stdout
+    assert "LLM provider: mistral" in result.stdout
+    assert "LLM model: mistral-small" in result.stdout
 
 
 def test_build_command_can_select_spacy_extraction(
@@ -901,6 +905,13 @@ def test_status_command_reports_managed_runtime_state(
     assert "http://0.0.0.0:8877/mcp" in result.stdout
     assert "Health endpoint" in result.stdout
     assert "http://0.0.0.0:8877/healthz" in result.stdout
+    assert "LabelGen cache" in result.stdout
+    assert "config-root" in result.stdout
+    assert "labelgen-cache" in result.stdout
+    assert "Retrieval strategy" in result.stdout
+    assert "greedy_label_coverage_semantic_reran" in result.stdout
+    assert "Fallback strategy" in result.stdout
+    assert "semantic_only" in result.stdout
     assert "HTTP status" in result.stdout
     assert "ready" in result.stdout
     assert "HTTP code" in result.stdout
@@ -1034,6 +1045,8 @@ def test_doctor_command_reports_actionable_checks(
     assert "codex binding" in result.stdout
     assert "label_gate_semantic_rank" in result.stdout
     assert "concept_gate_semantic_rank" in result.stdout
+    assert "LabelGen cache" in result.stdout
+    assert "labelgen-cache" in result.stdout
     assert "/usr/bin/codex" in result.stdout
 
 
