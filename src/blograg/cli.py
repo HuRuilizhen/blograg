@@ -465,12 +465,6 @@ def status(
         mcp_url=resolved_mcp_url,
         health_url=resolved_health_url,
     )
-    resolved_runtime_retrieval_strategy = (
-        persisted_config.retrieval.retrieval_strategy or "greedy_label_coverage_semantic_rerank"
-    )
-    resolved_runtime_fallback_strategy = (
-        persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
-    )
     resolved_labelgen_cache_dir = resolve_labelgen_cache_dir(
         persisted_config.build.labelgen_cache_dir
     )
@@ -482,8 +476,6 @@ def status(
         ("PID file", str(observed_status.pid_file)),
         ("Log file", str(observed_status.log_file)),
         ("LabelGen cache", resolved_labelgen_cache_dir or "unset"),
-        ("Retrieval strategy", resolved_runtime_retrieval_strategy),
-        ("Fallback strategy", resolved_runtime_fallback_strategy),
         ("HTTP status", "ready" if observed_status.http_ready else "not ready"),
     ]
     if observed_status.http_status_code is not None:
@@ -597,11 +589,13 @@ def doctor() -> None:
     resolved_labelgen_cache_dir = resolve_labelgen_cache_dir(
         persisted_config.build.labelgen_cache_dir
     )
-    doctor_rows.append(("Retrieval", "Strategy", "OK", resolved_retrieval_strategy))
+    doctor_rows.append(
+        ("Retrieval", "Configured retrieval strategy", "OK", resolved_retrieval_strategy)
+    )
     doctor_rows.append(
         (
             "Retrieval",
-            "Fallback strategy",
+            "Configured fallback strategy",
             "OK",
             resolved_label_free_fallback_strategy,
         )
