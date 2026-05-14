@@ -28,7 +28,6 @@ from blograg.config import (
     LLMProvider,
     RetrievalStrategy,
     build_config,
-    resolve_labelgen_cache_dir,
 )
 from blograg.indexing import BuildProgressUpdate, build_index, load_index
 from blograg.mcp import create_mcp_server
@@ -93,7 +92,7 @@ _LABELGEN_CACHE_DIR_OPTION = typer.Option(
     None,
     help=(
         "Optional cache directory override for provider-backed LLM concept extraction. "
-        "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > upstream default."
+        "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > blograg default cache dir."
     ),
 )
 _HOST_OPTION = typer.Option(
@@ -341,7 +340,7 @@ def serve(
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
 
-    cache_dir = resolve_labelgen_cache_dir(labelgen_cache_dir)
+    cache_dir = os.environ.get("LABELGEN_CACHE_DIR") or labelgen_cache_dir
     if cache_dir is not None:
         index.pipeline.config.labelgen.extraction.llm.cache_dir = cache_dir
     index.pipeline.config.retrieval.retrieval_strategy = resolved_retrieval_strategy

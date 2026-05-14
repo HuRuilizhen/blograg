@@ -621,6 +621,58 @@ def test_serve_command_prefers_environment_over_cli_for_labelgen_cache_dir(
     assert run_arguments["transport"] == "streamable-http"
 
 
+def test_serve_command_keeps_index_cache_dir_without_runtime_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_arguments: dict[str, object] = {}
+    fake_index = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            config=SimpleNamespace(
+                retrieval=SimpleNamespace(
+                    retrieval_strategy="greedy_label_coverage_semantic_rerank",
+                    label_free_fallback_strategy="semantic_only",
+                ),
+                labelgen=SimpleNamespace(
+                    extraction=SimpleNamespace(
+                        llm=SimpleNamespace(cache_dir="/tmp/built-index-cache")
+                    )
+                ),
+            )
+        )
+    )
+
+    class _FakeServer:
+        def run(self, *, transport: str) -> None:
+            run_arguments["transport"] = transport
+
+    def fake_load_index(*, index_dir: Path) -> object:
+        return fake_index
+
+    def fake_create_mcp_server(index: object, *, host: str, port: int) -> _FakeServer:
+        assert index is fake_index
+        run_arguments["host"] = host
+        run_arguments["port"] = port
+        return _FakeServer()
+
+    monkeypatch.delenv("LABELGEN_CACHE_DIR", raising=False)
+    monkeypatch.setattr(blograg.cli, "load_index", fake_load_index)
+    monkeypatch.setattr(blograg.cli, "create_mcp_server", fake_create_mcp_server)
+    (tmp_path / "index").mkdir()
+
+    result = runner.invoke(
+        app,
+        [
+            "serve",
+            "--index-dir",
+            str(tmp_path / "index"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_index.pipeline.config.labelgen.extraction.llm.cache_dir == "/tmp/built-index-cache"
+    assert run_arguments["transport"] == "streamable-http"
+
+
 def test_serve_command_can_select_http_binding(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -713,8 +765,8 @@ def test_config_show_all_includes_unset_and_default_values(
     assert "serve.host" in result.stdout
     assert "default: 127.0.0.1" in result.stdout
     assert "build.labelgen_cache_dir" in result.stdout
-    assert "default: upstream default" in result.stdout
-    assert ".labelgen-cache" in result.stdout
+    assert "default: blograg config" in result.stdout
+    assert "dir/labelgen-cache" in result.stdout
     assert "retrieval.retrieval_strategy" in result.stdout
     assert "default:" in result.stdout
     assert "greedy_label_coverage_semantic_reran" in result.stdout

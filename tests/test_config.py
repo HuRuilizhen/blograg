@@ -1,5 +1,7 @@
 """Tests for blograg configuration helpers."""
 
+from pathlib import Path
+
 import pytest
 
 from blograg.config import build_config
@@ -100,8 +102,10 @@ def test_build_config_uses_cli_labelgen_cache_dir_without_environment(
 
 def test_build_config_uses_default_labelgen_cache_dir_without_environment_or_cli(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.delenv("LABELGEN_CACHE_DIR", raising=False)
+    monkeypatch.setenv("BLOGRAG_CONFIG_DIR", str(tmp_path / "config-root"))
 
     config = build_config(
         concept_extractor="llm",
@@ -109,4 +113,6 @@ def test_build_config_uses_default_labelgen_cache_dir_without_environment_or_cli
         llm_model="mistral-small",
     )
 
-    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == ".labelgen-cache"
+    assert config.labelrag_pipeline.labelgen.extraction.llm.cache_dir == str(
+        (tmp_path / "config-root" / "labelgen-cache").resolve()
+    )

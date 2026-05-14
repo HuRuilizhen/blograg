@@ -1,17 +1,29 @@
 .DS_Store
+
+# Local environments
 .venv/
 venv/
+
+# Python caches and tooling state
 __pycache__/
 .pytest_cache/
 .ruff_cache/
 .pyright/
 .mypy_cache/
-coverage.xml
 .coverage
-dist/
+coverage.xml
+
+# Build artifacts
 build/
+dist/
 *.egg-info/
 site/
-.env.local
+
+# Local runtime/config state
 index/
 .labelgen-cache/
+
+# Docs: whitelist only the versioned public docs we currently ship
+docs/*
+!docs/commands.md
+!docs/dependency_contract.md
