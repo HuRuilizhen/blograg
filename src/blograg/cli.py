@@ -28,6 +28,7 @@ from blograg.config import (
     LLMProvider,
     RetrievalStrategy,
     build_config,
+    resolve_labelgen_cache_dir,
 )
 from blograg.indexing import BuildProgressUpdate, build_index, load_index
 from blograg.mcp import create_mcp_server
@@ -293,6 +294,9 @@ def build(
     typer.echo(f"Index directory: {(resolved_index_dir / 'blograg').resolve()}")
     typer.echo(f"Extractor: {resolved_concept_extractor}")
     if resolved_concept_extractor == "llm":
+        typer.echo(
+            f"LabelGen cache: {resolve_labelgen_cache_dir(resolved_labelgen_cache_dir) or 'unset'}"
+        )
         typer.echo(f"LLM provider: {resolved_llm_provider}")
         if resolved_llm_model:
             typer.echo(f"LLM model: {resolved_llm_model}")
@@ -461,6 +465,9 @@ def status(
         mcp_url=resolved_mcp_url,
         health_url=resolved_health_url,
     )
+    resolved_labelgen_cache_dir = resolve_labelgen_cache_dir(
+        persisted_config.build.labelgen_cache_dir
+    )
     rows = [
         ("Server", "running" if observed_status.process_running else "stopped"),
         ("PID", str(observed_status.pid) if observed_status.pid is not None else "missing"),
@@ -468,6 +475,7 @@ def status(
         ("Health endpoint", observed_status.health_url),
         ("PID file", str(observed_status.pid_file)),
         ("Log file", str(observed_status.log_file)),
+        ("LabelGen cache", resolved_labelgen_cache_dir or "unset"),
         ("HTTP status", "ready" if observed_status.http_ready else "not ready"),
     ]
     if observed_status.http_status_code is not None:
@@ -578,13 +586,26 @@ def doctor() -> None:
     resolved_label_free_fallback_strategy = (
         persisted_config.retrieval.label_free_fallback_strategy or "semantic_only"
     )
-    doctor_rows.append(("Retrieval", "Strategy", "OK", resolved_retrieval_strategy))
+    resolved_labelgen_cache_dir = resolve_labelgen_cache_dir(
+        persisted_config.build.labelgen_cache_dir
+    )
+    doctor_rows.append(
+        ("Retrieval", "Configured retrieval strategy", "OK", resolved_retrieval_strategy)
+    )
     doctor_rows.append(
         (
             "Retrieval",
-            "Fallback strategy",
+            "Configured fallback strategy",
             "OK",
             resolved_label_free_fallback_strategy,
+        )
+    )
+    doctor_rows.append(
+        (
+            "Runtime",
+            "LabelGen cache",
+            "OK",
+            resolved_labelgen_cache_dir or "unset",
         )
     )
 
