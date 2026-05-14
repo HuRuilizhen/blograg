@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blograg"
-version = "0.0.1"
+version = "0.0.2"
 description = "A local MCP server for retrieving paragraphs from one Jekyll-style blog."
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,10 +33,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/HuRuilizhen/blograg"
-Repository = "https://github.com/HuRuilizhen/blograg"
-Issues = "https://github.com/HuRuilizhen/blograg/issues"
-Documentation = "https://github.com/HuRuilizhen/blograg/blob/main/docs/commands.md"
+Homepage = "https://github.com/HuRuilizhen/blograg-mcp"
+Repository = "https://github.com/HuRuilizhen/blograg-mcp"
+Issues = "https://github.com/HuRuilizhen/blograg-mcp/issues"
+Documentation = "https://github.com/HuRuilizhen/blograg-mcp/blob/main/docs/commands.md"
 
 [project.scripts]
 blograg = "blograg.cli:app"
