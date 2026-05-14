@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 from labelgen import LabelGeneratorConfig
@@ -23,6 +24,7 @@ LabelFreeFallbackStrategy = Literal[
     "semantic_only",
 ]
 LABELGEN_CACHE_DIR_ENV_VAR = "LABELGEN_CACHE_DIR"
+BLOGRAG_CONFIG_DIR_ENV_VAR = "BLOGRAG_CONFIG_DIR"
 
 
 @dataclass(slots=True)
@@ -95,9 +97,24 @@ def build_config(
 
 
 def resolve_labelgen_cache_dir(cli_value: str | None = None) -> str | None:
-    """Resolve the labelgen cache directory with env > cli > upstream default precedence."""
+    """Resolve the labelgen cache directory with env > cli > blograg default precedence."""
 
     env_value = os.environ.get(LABELGEN_CACHE_DIR_ENV_VAR)
     if env_value:
         return env_value
-    return cli_value
+    if cli_value is not None:
+        return cli_value
+    return str(_default_labelgen_cache_dir())
+
+
+def _default_labelgen_cache_dir() -> Path:
+    override_dir = os.environ.get(BLOGRAG_CONFIG_DIR_ENV_VAR)
+    if override_dir:
+        config_dir = Path(override_dir).expanduser().resolve()
+    elif os.name == "nt":
+        appdata_dir = os.environ.get("APPDATA")
+        root_dir = Path(appdata_dir) if appdata_dir else Path.home() / "AppData" / "Roaming"
+        config_dir = root_dir / "blograg"
+    else:
+        config_dir = Path.home() / ".config" / "blograg"
+    return config_dir / "labelgen-cache"

@@ -713,8 +713,8 @@ def test_config_show_all_includes_unset_and_default_values(
     assert "serve.host" in result.stdout
     assert "default: 127.0.0.1" in result.stdout
     assert "build.labelgen_cache_dir" in result.stdout
-    assert "default: upstream default" in result.stdout
-    assert ".labelgen-cache" in result.stdout
+    assert "default: blograg config" in result.stdout
+    assert "dir/labelgen-cache" in result.stdout
     assert "retrieval.retrieval_strategy" in result.stdout
     assert "default:" in result.stdout
     assert "greedy_label_coverage_semantic_reran" in result.stdout

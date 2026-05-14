@@ -93,7 +93,7 @@ _LABELGEN_CACHE_DIR_OPTION = typer.Option(
     None,
     help=(
         "Optional cache directory override for provider-backed LLM concept extraction. "
-        "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > upstream default."
+        "Precedence: $LABELGEN_CACHE_DIR > --labelgen-cache-dir > blograg default cache dir."
     ),
 )
 _HOST_OPTION = typer.Option(

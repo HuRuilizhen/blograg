@@ -72,7 +72,7 @@ class BuildDefaults:
     )
     labelgen_cache_dir: str | None = field(
         default=None,
-        metadata={"display_default": "default: upstream default (.labelgen-cache)"},
+        metadata={"display_default": "default: blograg config dir/labelgen-cache"},
     )
 
 
