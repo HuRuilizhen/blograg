@@ -1,6 +1,6 @@
 # Command Reference
 
-This document is the detailed CLI reference for `blograg 0.0.1`.
+This document is the detailed CLI reference for `blograg 0.0.2`.
 
 For the shorter product overview and first-run path, see the repository
 `README.md`.
@@ -49,6 +49,10 @@ Notes:
 - `build` is a full rebuild command.
 - It does not reuse incremental index state.
 - Retrieval strategy settings are not part of build-time behavior.
+- If `--labelgen-cache-dir` is not set, `blograg` defaults to
+  `labelgen-cache` under the resolved `blograg` config directory.
+- In `llm` mode, the build summary reports the effective cache path along with
+  the provider and model.
 
 ## `blograg serve`
 
@@ -130,6 +134,13 @@ Useful options:
 - `--port INTEGER`
 - `--url TEXT`
 
+Notes:
+
+- `status` reports managed process state and HTTP readiness.
+- It also reports the effective LabelGen cache path used by local defaults.
+- Retrieval strategy overrides are not shown here because one-off `start`
+  overrides do not persist back to config.
+
 ## `blograg logs`
 
 Inspect the managed server log.
@@ -158,7 +169,8 @@ Current checks include:
 - index path and artifact completeness
 - managed server process state
 - HTTP readiness
-- retrieval runtime configuration
+- configured retrieval defaults
+- effective LabelGen cache path
 - client executable presence
 - client registration state
 - LLM provider/model/credential requirements when using `llm`
